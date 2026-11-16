@@ -75,7 +75,7 @@ time and follow its rules ("How to work a phase").
 - **State channels (`state:*`):** small, consistent data, broadcast to every window as a versioned snapshot. A window ignores a snapshot that is not newer than the one it has.
 - **Stream channels (`stream:*`):** large or append-only data (AI text, terminal output, artifact bodies) as keyed, batched deltas that main buffers for replay. Never put this data in a state snapshot.
   - A producer in main calls `hub.create()` and writes through the returned `StreamWriter`; it must stop when `writer.signal` aborts (a cancel from any window).
-  - A window registers `onStreamData` first, then calls `subscribeStream(id, knownChunks)`; main replies with the chunks from `knownChunks` on, then live ones every ~30 ms. `useStream` does this.
+  - A window registers `onStreamData` first, then calls `subscribeStream(id, knownChunks)`; main replies with the chunks from `knownChunks` on, then live ones every ~30 ms. Main keeps one subscription per window and stream, so a window shares it between its consumers: use `useStream` (or `createStreamFollowers`), which does this and unsubscribes only when the last consumer leaves.
   - A delta's `startIndex` says where its chunks go. A window skips chunks it already has and re-subscribes when a delta would leave a gap.
   - Once a finished stream's text is stored elsewhere, call `hub.release(id)`.
 - Every payload that arrives in main is `unknown` and is validated before use.

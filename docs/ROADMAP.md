@@ -144,7 +144,8 @@ in other components.
   the status; finishing sends pending chunks with the final status at once.
 - `src/hooks/useStream.ts` follows one stream in a window. Its pure
   `applyStreamDelta()` skips chunks the window has and reports a gap instead
-  of leaving a hole.
+  of leaving a hole. `createStreamFollowers()` shares one subscription per
+  stream between all consumers in a window.
 - `electronAPI.startTestStream()` starts a fake numbered stream
   (`electron/streams/testStream.ts`). It is refused in a packaged app.
 - No component mounts `useStream` yet; Phase 2b's chat is its first user.
