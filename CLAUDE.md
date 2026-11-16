@@ -37,7 +37,7 @@ time and follow its rules ("How to work a phase").
   - `windows.ts` – window registry: focus-or-create, close and quit rules, trusted senders.
   - `appStateStore.ts` – owns the shared state and its version (no Electron imports, unit-testable).
   - `projectFiles.ts` – folder access rules (no Electron imports, unit-testable).
-  - `ai/` – providers (no Electron imports, unit-testable): `adapter.ts` (the `AIProviderAdapter` contract), `registry.ts` (adapter per backend; in development a fake stand-in for backends not built yet), `replies.ts` (`ReplyRunner`: starts a reply, holds the per-thread run lock, stores the outcome), `fakeProvider.ts`, `requests.ts` (validates `ai:*` payloads).
+  - `ai/` – providers (no Electron imports, unit-testable): `adapter.ts` (the `AIProviderAdapter` contract), `registry.ts` (adapter per backend; in development a fake stand-in for backends not built yet), `replies.ts` (`ReplyRunner`: starts a reply, holds the per-thread run lock, stores the outcome), `fakeProvider.ts`, `requests.ts` (validates `ai:*` payloads), `providers/claudeCli.ts` (the Claude CLI provider: one `claude --print` child per reply, `spawn` injectable for tests, `stopAll()` on app quit).
   - `streams/` – `streamHub.ts` owns every stream's chunks and status and batches them to subscribers (no Electron imports, unit-testable); `testStream.ts` is the development-only fake producer; `requests.ts` validates stream requests.
   - `ipc/<domain>.ts` – IPC handlers for one domain.
   - `preload/<domain>.ts` – bridge methods for one domain; `preload.ts` combines them.

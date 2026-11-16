@@ -26,12 +26,17 @@ side or on separate monitors:
   shows the text so far, then continues. A chat replies to one message at a
   time; sending another while it is replying is refused with a message.
 
-No real AI backend is connected yet (Claude CLI arrives in Phase 2c, API keys
-in 2d). In a development build (`npm run dev`) every backend answers with a
-built-in test reply that starts with `[Test reply]`; a packaged build says the
-backend is not available yet.
+**Claude Sub (CLI)** replies with the Claude Code CLI installed on your
+computer and signed in to your account (`claude auth login`). If the CLI is
+missing or not signed in, the backend selector says so. Stop ends the reply,
+and quitting the app ends any reply still running. Replies are chat only: the
+CLI's tools are switched off.
 
-Not included yet: real AI backends, a code editor, a terminal, and saving data
+The API-key backends arrive in Phase 2d. Until then, in a development build
+(`npm run dev`) they answer with a built-in test reply that starts with
+`[Test reply]`; a packaged build says the backend is not available yet.
+
+Not included yet: the API-key backends, a code editor, a terminal, and saving data
 between runs. The order they will be built
 in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 

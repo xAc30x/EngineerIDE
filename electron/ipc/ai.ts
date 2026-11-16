@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { AI_CHANNELS, type StartedReply } from '../../shared/ipc/ai';
 import type { ProviderAvailability } from '../../shared/types';
+import { createClaudeCliProvider } from '../ai/providers/claudeCli';
 import { ProviderRegistry } from '../ai/registry';
 import { ReplyRunner } from '../ai/replies';
 import { parseMessageContent, parseThreadId } from '../ai/requests';
@@ -19,6 +20,10 @@ interface AiIpcDependencies {
 export function registerAiIpc({ windows, appState, streams }: AiIpcDependencies): void {
   // Packaged builds never answer with the fake provider.
   const registry = new ProviderRegistry({ allowTestStandIn: !app.isPackaged });
+  const claudeCli = createClaudeCliProvider();
+  registry.register(claudeCli);
+  // No CLI child process outlives the app.
+  app.on('will-quit', () => claudeCli.stopAll());
   const replies = new ReplyRunner({ hub: streams, appState, registry });
 
   handleFromAppWindow<StartedReply>(AI_CHANNELS.sendMessage, windows, (_event, threadIdValue, contentValue) => {
