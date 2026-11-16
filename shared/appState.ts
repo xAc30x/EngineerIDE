@@ -1,4 +1,4 @@
-import { DEFAULT_BACKEND, getBackendLabel, isBackendProvider } from './backends';
+import { DEFAULT_BACKEND, isBackendProvider } from './backends';
 import type {
   BackendProvider,
   Message,
@@ -7,6 +7,7 @@ import type {
   SelectedFolder,
   Thread,
 } from './types';
+import type { StreamStatus } from './ipc/streams';
 
 /**
  * The state every window shares, and the only functions that change it.
@@ -60,7 +61,28 @@ export type RendererAction =
  */
 export type SharedAction =
   | RendererAction
-  | { type: 'setActiveProject'; folder: SelectedFolder | null };
+  | { type: 'setActiveProject'; folder: SelectedFolder | null }
+  /** Marks `threadId` as replying through `streamId`. Ignored if it is already replying. */
+  | { type: 'startReply'; threadId: string; streamId: string; provider: BackendProvider }
+  /**
+   * Ends the reply `streamId` of `threadId` and stores its outcome as
+   * messages. Ignored unless that stream is the thread's running reply.
+   */
+  | {
+      type: 'finishReply';
+      threadId: string;
+      streamId: string;
+      outcome: ReplyOutcome;
+    };
+
+/** How a reply ended, with everything it produced. */
+export interface ReplyOutcome {
+  status: Exclude<StreamStatus, 'running'>;
+  /** The reply's text, possibly partial. */
+  text: string;
+  /** Why it failed. Set only when `status` is `failed`. */
+  error?: string;
+}
 
 type ThreadContainers = Pick<SharedState, 'sections' | 'recents'>;
 
@@ -74,7 +96,14 @@ function createSection(title: string, kind: Section['kind'], id: string = create
 
 function createEmptyThread(): Thread {
   const now = Date.now();
-  return { id: createId(), title: DEFAULT_THREAD_TITLE, messages: [], createdAt: now, updatedAt: now };
+  return {
+    id: createId(),
+    title: DEFAULT_THREAD_TITLE,
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+    runningReply: null,
+  };
 }
 
 function createMessage(role: MessageRole, content: string): Message {
@@ -178,20 +207,71 @@ function sendMessage(state: SharedState, threadId: string | null, content: strin
     return state;
   }
 
-  // No AIProviderAdapter is implemented yet, so the thread records that
-  // plainly instead of showing a made-up reply.
-  const notice = createMessage(
-    'system',
-    `"${getBackendLabel(base.selectedBackend)}" is not connected yet, so no reply was generated. ` +
-      'Your message is saved in this chat. AI backends arrive in a later milestone.',
-  );
-
+  // The reply is started by the main process (electron/ai/replies.ts), not here.
   return {
     ...base,
     ...updateThread(base, targetId, (thread) => ({
       ...thread,
       title: thread.messages.length === 0 ? deriveThreadTitle(text) : thread.title,
-      messages: [...thread.messages, createMessage('user', text), notice],
+      messages: [...thread.messages, createMessage('user', text)],
+      updatedAt: Date.now(),
+    })),
+  };
+}
+
+function startReply(
+  state: SharedState,
+  threadId: string,
+  streamId: string,
+  provider: BackendProvider,
+): SharedState {
+  const thread = findThread(state, threadId);
+  if (thread === undefined || thread.runningReply !== null) {
+    return state;
+  }
+  return {
+    ...state,
+    ...updateThread(state, threadId, (current) => ({
+      ...current,
+      runningReply: { streamId, provider },
+    })),
+  };
+}
+
+/**
+ * The messages a finished reply adds to its thread. `createMessage` gives
+ * each one an id and a time.
+ */
+export function replyOutcomeMessages(outcome: ReplyOutcome): Message[] {
+  // Text the user already watched appear is kept, so nothing vanishes from the chat.
+  const reply = outcome.text.trim() === '' ? [] : [createMessage('assistant', outcome.text)];
+  switch (outcome.status) {
+    case 'completed':
+      return reply;
+    case 'cancelled':
+      return [...reply, createMessage('system', 'Reply stopped.')];
+    case 'failed':
+      return [...reply, createMessage('system', `The reply failed: ${outcome.error ?? 'unknown error'}`)];
+  }
+}
+
+function finishReply(
+  state: SharedState,
+  threadId: string,
+  streamId: string,
+  outcome: ReplyOutcome,
+): SharedState {
+  const thread = findThread(state, threadId);
+  if (thread?.runningReply?.streamId !== streamId) {
+    return state;
+  }
+  const added = replyOutcomeMessages(outcome);
+  return {
+    ...state,
+    ...updateThread(state, threadId, (current) => ({
+      ...current,
+      runningReply: null,
+      messages: added.length === 0 ? current.messages : [...current.messages, ...added],
       updatedAt: Date.now(),
     })),
   };
@@ -283,6 +363,10 @@ export function applyAction(state: SharedState, action: SharedAction): SharedSta
       return state.selectedBackend === action.backend
         ? state
         : { ...state, selectedBackend: action.backend };
+    case 'startReply':
+      return startReply(state, action.threadId, action.streamId, action.provider);
+    case 'finishReply':
+      return finishReply(state, action.threadId, action.streamId, action.outcome);
     case 'setActiveProject':
       return {
         ...state,

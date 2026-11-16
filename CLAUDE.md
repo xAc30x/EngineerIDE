@@ -10,7 +10,7 @@ time and follow its rules ("How to work a phase").
 
 1. **Strict Process Isolation:** Never import `electron`, `fs`, `path`, or `child_process` inside `src/` or `shared/`. All OS/file system operations must pass through the strictly typed `window.electronAPI` bridge built in `electron/preload.ts`, with `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`.
 2. **Cross-Platform Path Safety:** Always use Node's `path.join()` and `path.resolve()` in `electron/`. Never hardcode `/` or `\` separators or OS-specific paths.
-3. **Provider-Agnostic AI Contract:** `AIProviderAdapter` in `shared/types.ts` supports `'claude-cli' | 'openrouter' | 'anthropic-api' | 'openai-api'`, so backends can be plugged in without rewriting UI components. Providers run in the main process (roadmap Phase 2b).
+3. **Provider-Agnostic AI Contract:** `AIProviderAdapter` in `electron/ai/adapter.ts` supports `'claude-cli' | 'openrouter' | 'anthropic-api' | 'openai-api'`, so backends can be plugged in without rewriting UI components. Providers run only in the main process; windows use the serialisable `ai:*` contract in `shared/ipc/ai.ts`.
 4. **Dependency Discipline:** Add a native C++ module (for example `better-sqlite3` or `node-pty`) only in the roadmap phase that names it, and at most one per phase, so `npm install` keeps running without node-gyp build errors.
 5. **Verification Gate:** Before concluding, meet the shared definition of done in the roadmap: `npx tsc --noEmit`, `npm test`, `npm run build`, and a check observed in the running app with both windows open. CI (`.github/workflows/ci.yml`) runs the first three on every pull request and on `main`; the two-window check is manual.
 
@@ -27,7 +27,7 @@ time and follow its rules ("How to work a phase").
 ## Layout
 
 - `shared/` – code both processes run. Pure TypeScript: no Node, Electron, React, or DOM imports.
-  - `types.ts` – shared contracts (threads, files, `IpcResult`, `AIProviderAdapter`).
+  - `types.ts` – shared contracts (threads, files, `IpcResult`, `BackendProvider`, `ProviderAvailability`).
   - `appState.ts` – shared state shape, `applyAction()`, and `parseAction()`.
   - `backends.ts` – the AI backend list.
   - `ipc/<domain>.ts` – one file per IPC domain: channel names, payload types, and that domain's part of the bridge API.
@@ -37,6 +37,7 @@ time and follow its rules ("How to work a phase").
   - `windows.ts` – window registry: focus-or-create, close and quit rules, trusted senders.
   - `appStateStore.ts` – owns the shared state and its version (no Electron imports, unit-testable).
   - `projectFiles.ts` – folder access rules (no Electron imports, unit-testable).
+  - `ai/` – providers (no Electron imports, unit-testable): `adapter.ts` (the `AIProviderAdapter` contract), `registry.ts` (adapter per backend; in development a fake stand-in for backends not built yet), `replies.ts` (`ReplyRunner`: starts a reply, holds the per-thread run lock, stores the outcome), `fakeProvider.ts`, `requests.ts` (validates `ai:*` payloads).
   - `streams/` – `streamHub.ts` owns every stream's chunks and status and batches them to subscribers (no Electron imports, unit-testable); `testStream.ts` is the development-only fake producer; `requests.ts` validates stream requests.
   - `ipc/<domain>.ts` – IPC handlers for one domain.
   - `preload/<domain>.ts` – bridge methods for one domain; `preload.ts` combines them.
@@ -60,13 +61,14 @@ time and follow its rules ("How to work a phase").
 
 | Kind of state | Owner | Examples |
 | --- | --- | --- |
-| Shared | Main process, `electron/appStateStore.ts` | sections, threads, messages, active thread, active project, selected backend |
+| Shared | Main process, `electron/appStateStore.ts` | sections, threads, messages, each thread's running reply, active thread, active project, selected backend |
 | Window-local | That window's Zustand store or React state | chat draft, open sidebar page, sidebar and panel toggles, expanded folders |
 | Long-running output | Main process, `electron/streams/streamHub.ts`, by stream id | AI replies, terminal output |
 
 - A window changes shared state only by sending an action (`electronAPI.dispatch`). It never edits its copy directly; the copy changes when main broadcasts the next snapshot.
 - New shared behaviour is a new action in `shared/appState.ts`, with a `parseAction()` case and tests. An action names the thing it changes by id (for example `threadId`) rather than relying on "the active one".
-- State that must be trusted is set by main, not by a renderer action. The active project is set inside `fs:selectFolder`.
+- State that must be trusted is set by main, not by a renderer action. The active project is set inside `fs:selectFolder`; a thread's `runningReply` is set and cleared only by `startReply`/`finishReply`, which `parseAction()` rejects.
+- AI replies: a window calls `electronAPI.sendChatMessage(threadId, content)`, not the `sendMessage` action. Main refuses, changing nothing, if the thread is already replying (the lock is `thread.runningReply`); otherwise it adds the message, creates a stream, and records it. When the stream ends, main dispatches `finishReply` (which turns the outcome into messages via `replyOutcomeMessages()`) and then releases the stream.
 - Anything both windows can see is owned by main and addressed by an id, never by a window. There is one active project for the whole app.
 
 ## IPC patterns

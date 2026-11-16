@@ -2,6 +2,7 @@ import { app, dialog } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppStateStore } from './appStateStore';
+import { registerAiIpc } from './ipc/ai';
 import { registerFsIpc } from './ipc/fs';
 import { registerStateIpc } from './ipc/state';
 import { registerStreamsIpc } from './ipc/streams';
@@ -28,7 +29,8 @@ app
     // One line per IPC domain; handlers live in electron/ipc/<domain>.ts.
     registerFsIpc({ windows, projectFiles, appState });
     registerStateIpc({ windows, appState });
-    registerStreamsIpc({ windows });
+    const streams = registerStreamsIpc({ windows });
+    registerAiIpc({ windows, appState, streams });
     registerWindowsIpc({ windows });
     windows.show('workspace');
   })
