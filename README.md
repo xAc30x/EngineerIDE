@@ -3,7 +3,7 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: two-window shell (Milestone 1 + roadmap Phase 0)
+## Status: two-window shell (Milestone 1, roadmap Phases 0 and 2a)
 
 The app runs as two windows that stay open together, so they can sit side by
 side or on separate monitors:
@@ -20,6 +20,11 @@ side or on separate monitors:
 - Closing a window closes only that window; the other one stays open, and its
   header button brings the closed one back as you left it. The app quits when
   you close the last window on screen.
+
+Behind the scenes the main process can now stream long text output to both
+windows (roadmap Phase 2a). A window that is reloaded or reopened mid-stream
+catches up on the text so far, and either window can cancel a stream. Nothing
+in the interface uses it yet; the chat will in Phase 2b.
 
 Not included yet: AI backends (messages are stored but not answered), a code
 editor, a terminal, and saving data between runs. The order they will be built
