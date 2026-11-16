@@ -1,11 +1,11 @@
 import { ArrowUp, FolderOpen, Info } from 'lucide-react';
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
-import { BACKEND_OPTIONS, isBackendProvider } from '../../config/backends';
+import { BACKEND_OPTIONS, isBackendProvider } from '../../../shared/backends';
 import { useProjectFolder } from '../../hooks/useProjectFolder';
 import { selectActiveThread, useAppStore } from '../../store/useAppStore';
 import type { Message } from '../../types';
 
-/** `centered` is the wide Workspace layout; `docked` fits the narrow IDE side panel. */
+/** `centered` is the wide Workspace layout; `docked` fits the IDE window's side panel. */
 export type ChatPanelVariant = 'centered' | 'docked';
 
 interface ChatPanelProps {
@@ -62,9 +62,9 @@ function MessageItem({ message }: { message: Message }) {
 }
 
 /**
- * Conversation view and message input. Both modes render this component
- * against the same store state, so the thread, the unsent draft, and the
- * selected backend are identical in Workspace Mode and IDE Mode.
+ * Conversation view and message input. Both windows render this component.
+ * The thread and the selected backend are shared through the main process;
+ * the unsent draft belongs to each window.
  */
 export function ChatPanel({ variant }: ChatPanelProps) {
   const layout = LAYOUTS[variant];

@@ -1,64 +1,51 @@
 import { create } from 'zustand';
-import { DEFAULT_BACKEND, getBackendLabel } from '../config/backends';
-import type {
-  AppMode,
-  BackendProvider,
-  Message,
-  MessageRole,
-  NavTab,
-  Section,
-  SelectedFolder,
-  Thread,
-} from '../types';
+import {
+  applyAction,
+  createInitialSharedState,
+  findThread,
+  type RendererAction,
+  type SharedState,
+} from '../../shared/appState';
+import type { StateApi, StateSnapshot } from '../../shared/ipc/state';
+import { getBridge } from '../lib/bridge';
+import type { BackendProvider, NavTab, Thread } from '../types';
 
-export const PINNED_SECTION_ID = 'pinned';
-export const DEFAULT_THREAD_TITLE = 'New chat';
-const MAX_THREAD_TITLE_LENGTH = 48;
+export { DEFAULT_THREAD_TITLE, findThread, PINNED_SECTION_ID } from '../../shared/appState';
 
-export interface AppStateData {
-  activeMode: AppMode;
+/** UI state that belongs to one window and is never synchronised. */
+export interface WindowLocalState {
+  /** The open Workspace page. */
   activeNavTab: NavTab;
-  /** The built-in Pinned section first, followed by user-created sections. */
-  sections: Section[];
-  /** Threads that are not in any section, most recent first. */
-  recents: Thread[];
-  /** Selected conversation, shared by Workspace Mode and IDE Mode. */
-  activeThreadId: string | null;
-  activeProjectPath: string | null;
-  activeProjectName: string | null;
-  selectedBackend: BackendProvider;
-  /** Unsent text in the chat input, shared by both modes. */
+  /** Unsent text in this window's chat input. */
   composerDraft: string;
   isSidebarCollapsed: boolean;
   isArtifactsPanelOpen: boolean;
 }
 
+/** This window's copy of the shared state, plus its own UI state. */
+export type AppStateData = SharedState & WindowLocalState;
+
+/**
+ * Shared-state actions are requests: with a bridge they go to the main
+ * process and take effect when its next snapshot arrives. They return nothing.
+ */
 export interface AppActions {
-  setActiveMode: (mode: AppMode) => void;
-  toggleMode: () => void;
-  /**
-   * Opens a sidebar destination. Every tab except `chat` is a Workspace page,
-   * so selecting one also switches to Workspace Mode.
-   */
   setActiveNavTab: (tab: NavTab) => void;
   /**
    * Starts a conversation and selects it. Without `sectionId` it goes to
-   * Recents, where an existing empty conversation is reused instead of
-   * adding another. Returns the id of the selected thread.
+   * Recents, where an existing empty conversation is reused.
    */
-  createThread: (sectionId?: string) => string;
+  createThread: (sectionId?: string) => void;
   selectThread: (threadId: string) => void;
-  /** Adds a user message to the active thread, creating a thread if needed. */
+  /** Adds a user message to the thread this window is showing. */
   sendMessage: (content: string) => void;
   /** Moves a thread to a section, or to Recents when `sectionId` is `null`. */
   moveThread: (threadId: string, sectionId: string | null) => void;
   togglePinned: (threadId: string) => void;
-  /** Returns the new section id, or `null` when the title is blank. */
-  addSection: (title: string) => string | null;
+  addSection: (title: string) => void;
   /** Removes a custom section and moves its threads to Recents. */
   removeSection: (sectionId: string) => void;
   toggleSectionCollapsed: (sectionId: string) => void;
-  setActiveProject: (folder: SelectedFolder | null) => void;
   setSelectedBackend: (backend: BackendProvider) => void;
   setComposerDraft: (draft: string) => void;
   toggleSidebar: () => void;
@@ -67,83 +54,24 @@ export interface AppActions {
 
 export type AppStore = AppStateData & AppActions;
 
-type ThreadContainers = Pick<AppStateData, 'sections' | 'recents'>;
-
-function createId(): string {
-  return crypto.randomUUID();
-}
-
-function createSection(title: string, kind: Section['kind'], id: string = createId()): Section {
-  return { id, title, kind, isCollapsed: false, items: [] };
-}
-
-function createEmptyThread(): Thread {
-  const now = Date.now();
-  return { id: createId(), title: DEFAULT_THREAD_TITLE, messages: [], createdAt: now, updatedAt: now };
-}
-
-function createMessage(role: MessageRole, content: string): Message {
-  return { id: createId(), role, content, createdAt: Date.now() };
-}
-
-function deriveThreadTitle(firstMessage: string): string {
-  const firstLine = firstMessage.split('\n', 1)[0]?.trim() ?? '';
-  if (firstLine === '') {
-    return DEFAULT_THREAD_TITLE;
-  }
-  return firstLine.length > MAX_THREAD_TITLE_LENGTH
-    ? `${firstLine.slice(0, MAX_THREAD_TITLE_LENGTH - 1)}…`
-    : firstLine;
-}
-
-export function findThread(state: ThreadContainers, threadId: string): Thread | undefined {
-  for (const section of state.sections) {
-    const match = section.items.find((thread) => thread.id === threadId);
-    if (match) {
-      return match;
-    }
-  }
-  return state.recents.find((thread) => thread.id === threadId);
-}
-
-function updateThread(
-  state: ThreadContainers,
-  threadId: string,
-  update: (thread: Thread) => Thread,
-): ThreadContainers {
-  const apply = (threads: Thread[]): Thread[] =>
-    threads.map((thread) => (thread.id === threadId ? update(thread) : thread));
-  return {
-    sections: state.sections.map((section) => ({ ...section, items: apply(section.items) })),
-    recents: apply(state.recents),
-  };
-}
-
-function withoutThread(state: ThreadContainers, threadId: string): ThreadContainers {
-  const remove = (threads: Thread[]): Thread[] => threads.filter((thread) => thread.id !== threadId);
-  return {
-    sections: state.sections.map((section) => ({ ...section, items: remove(section.items) })),
-    recents: remove(state.recents),
-  };
-}
-
 export function createInitialState(): AppStateData {
   return {
-    activeMode: 'workspace',
+    ...createInitialSharedState(),
     activeNavTab: 'chat',
-    sections: [
-      createSection('Pinned', 'pinned', PINNED_SECTION_ID),
-      createSection('Work', 'custom'),
-      createSection('Personal', 'custom'),
-    ],
-    recents: [],
-    activeThreadId: null,
-    activeProjectPath: null,
-    activeProjectName: null,
-    selectedBackend: DEFAULT_BACKEND,
     composerDraft: '',
     isSidebarCollapsed: false,
     isArtifactsPanelOpen: false,
+  };
+}
+
+function pickSharedState(state: AppStateData): SharedState {
+  return {
+    sections: state.sections,
+    recents: state.recents,
+    activeThreadId: state.activeThreadId,
+    activeProjectPath: state.activeProjectPath,
+    activeProjectName: state.activeProjectName,
+    selectedBackend: state.selectedBackend,
   };
 }
 
@@ -152,158 +80,99 @@ export function selectActiveThread(state: AppStore): Thread | undefined {
   return state.activeThreadId === null ? undefined : findThread(state, state.activeThreadId);
 }
 
-export const useAppStore = create<AppStore>()((set, get) => ({
-  ...createInitialState(),
-
-  setActiveMode: (mode) => set({ activeMode: mode }),
-
-  toggleMode: () =>
-    set((state) => ({ activeMode: state.activeMode === 'workspace' ? 'ide' : 'workspace' })),
-
-  setActiveNavTab: (tab) =>
-    set((state) => ({
-      activeNavTab: tab,
-      activeMode: tab === 'chat' ? state.activeMode : 'workspace',
-    })),
-
-  createThread: (sectionId) => {
-    const state = get();
-    const targetSection =
-      sectionId === undefined
-        ? undefined
-        : state.sections.find((section) => section.id === sectionId);
-
-    if (targetSection === undefined) {
-      const latest = state.recents[0];
-      if (latest !== undefined && latest.messages.length === 0) {
-        set({ activeThreadId: latest.id, activeNavTab: 'chat' });
-        return latest.id;
+/**
+ * Creates one window's store.
+ *
+ * With `bridge`, the shared part mirrors the main process: actions are sent
+ * to it and the store changes when a snapshot comes back. Without a bridge
+ * (a regular browser, or a unit test) actions are applied locally.
+ */
+export function createAppStore(bridge?: StateApi) {
+  const store = create<AppStore>()((set, get) => {
+    const dispatch = (action: RendererAction): void => {
+      if (bridge === undefined) {
+        set(applyAction(pickSharedState(get()), action));
+        return;
       }
-    }
+      bridge
+        .dispatch(action)
+        .then((result) => {
+          if (!result.ok) {
+            console.error(`The "${action.type}" change was rejected: ${result.error}`);
+          }
+        })
+        .catch((error: unknown) => {
+          console.error(`The "${action.type}" change could not be sent:`, error);
+        });
+    };
 
-    const thread = createEmptyThread();
-    set({
-      activeThreadId: thread.id,
-      activeNavTab: 'chat',
-      ...(targetSection === undefined
-        ? { recents: [thread, ...state.recents] }
-        : {
-            sections: state.sections.map((section) =>
-              section.id === targetSection.id
-                ? { ...section, isCollapsed: false, items: [thread, ...section.items] }
-                : section,
-            ),
-          }),
-    });
-    return thread.id;
-  },
+    return {
+      ...createInitialState(),
 
-  selectThread: (threadId) => {
-    if (findThread(get(), threadId) === undefined) {
-      return;
-    }
-    set({ activeThreadId: threadId, activeNavTab: 'chat' });
-  },
+      setActiveNavTab: (tab) => set({ activeNavTab: tab }),
 
-  sendMessage: (content) => {
-    const text = content.trim();
-    if (text === '') {
-      return;
-    }
+      createThread: (sectionId) => {
+        set({ activeNavTab: 'chat' });
+        dispatch(sectionId === undefined ? { type: 'createThread' } : { type: 'createThread', sectionId });
+      },
 
-    const activeId = get().activeThreadId;
-    const threadId =
-      activeId !== null && findThread(get(), activeId) !== undefined
-        ? activeId
-        : get().createThread();
+      selectThread: (threadId) => {
+        if (findThread(get(), threadId) === undefined) {
+          return;
+        }
+        set({ activeNavTab: 'chat' });
+        dispatch({ type: 'selectThread', threadId });
+      },
 
-    // No AIProviderAdapter is implemented in Milestone 1, so the thread
-    // records that plainly instead of showing a made-up reply.
-    const backendLabel = getBackendLabel(get().selectedBackend);
-    const notice = createMessage(
-      'system',
-      `"${backendLabel}" is not connected yet, so no reply was generated. ` +
-        'Your message is saved in this chat. AI backends arrive in a later milestone.',
-    );
+      // The thread id is sent along, so the message lands in the thread this
+      // window shows even if the other window changes the selection meanwhile.
+      sendMessage: (content) =>
+        dispatch({ type: 'sendMessage', threadId: get().activeThreadId, content }),
 
-    set((state) => ({
-      ...updateThread(state, threadId, (thread) => ({
-        ...thread,
-        title: thread.messages.length === 0 ? deriveThreadTitle(text) : thread.title,
-        messages: [...thread.messages, createMessage('user', text), notice],
-        updatedAt: Date.now(),
-      })),
-      activeThreadId: threadId,
-    }));
-  },
+      moveThread: (threadId, sectionId) => dispatch({ type: 'moveThread', threadId, sectionId }),
+      togglePinned: (threadId) => dispatch({ type: 'togglePinned', threadId }),
+      addSection: (title) => dispatch({ type: 'addSection', title }),
+      removeSection: (sectionId) => dispatch({ type: 'removeSection', sectionId }),
+      toggleSectionCollapsed: (sectionId) => dispatch({ type: 'toggleSectionCollapsed', sectionId }),
+      setSelectedBackend: (backend) => dispatch({ type: 'setSelectedBackend', backend }),
 
-  moveThread: (threadId, sectionId) => {
-    const state = get();
-    const thread = findThread(state, threadId);
-    if (thread === undefined) {
-      return;
-    }
-    if (sectionId !== null && !state.sections.some((section) => section.id === sectionId)) {
-      return;
-    }
+      setComposerDraft: (draft) => set({ composerDraft: draft }),
+      toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
+      toggleArtifactsPanel: () =>
+        set((state) => ({ isArtifactsPanelOpen: !state.isArtifactsPanelOpen })),
+    };
+  });
 
-    const remaining = withoutThread(state, threadId);
-    set(
-      sectionId === null
-        ? { sections: remaining.sections, recents: [thread, ...remaining.recents] }
-        : {
-            recents: remaining.recents,
-            sections: remaining.sections.map((section) =>
-              section.id === sectionId ? { ...section, items: [thread, ...section.items] } : section,
-            ),
-          },
-    );
-  },
-
-  togglePinned: (threadId) => {
-    const pinned = get().sections.find((section) => section.id === PINNED_SECTION_ID);
-    const isPinned = pinned?.items.some((thread) => thread.id === threadId) ?? false;
-    get().moveThread(threadId, isPinned ? null : PINNED_SECTION_ID);
-  },
-
-  addSection: (title) => {
-    const trimmed = title.trim();
-    if (trimmed === '') {
-      return null;
-    }
-    const section = createSection(trimmed, 'custom');
-    set((state) => ({ sections: [...state.sections, section] }));
-    return section.id;
-  },
-
-  removeSection: (sectionId) =>
-    set((state) => {
-      const section = state.sections.find((candidate) => candidate.id === sectionId);
-      if (section === undefined || section.kind !== 'custom') {
-        return state;
+  if (bridge !== undefined) {
+    // Snapshots can arrive out of order (the first fetch races with
+    // broadcasts), so anything that is not newer than the current one is dropped.
+    let version = -1;
+    const applySnapshot = (snapshot: StateSnapshot): void => {
+      if (snapshot.version <= version) {
+        return;
       }
-      return {
-        sections: state.sections.filter((candidate) => candidate.id !== sectionId),
-        recents: [...section.items, ...state.recents],
-      };
-    }),
+      version = snapshot.version;
+      store.setState(snapshot.state);
+    };
 
-  toggleSectionCollapsed: (sectionId) =>
-    set((state) => ({
-      sections: state.sections.map((section) =>
-        section.id === sectionId ? { ...section, isCollapsed: !section.isCollapsed } : section,
-      ),
-    })),
+    // Subscribe first, then fetch, so no change can fall between the two.
+    bridge.onStateChanged(applySnapshot);
+    bridge
+      .getAppState()
+      .then((result) => {
+        if (result.ok) {
+          applySnapshot(result.value);
+        } else {
+          console.error(`Could not load the application state: ${result.error}`);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Could not load the application state:', error);
+      });
+  }
 
-  setActiveProject: (folder) =>
-    set({ activeProjectPath: folder?.path ?? null, activeProjectName: folder?.name ?? null }),
+  return store;
+}
 
-  setSelectedBackend: (backend) => set({ selectedBackend: backend }),
-
-  setComposerDraft: (draft) => set({ composerDraft: draft }),
-
-  toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
-
-  toggleArtifactsPanel: () =>
-    set((state) => ({ isArtifactsPanelOpen: !state.isArtifactsPanelOpen })),
-}));
+/** The store of the window this page runs in. */
+export const useAppStore = createAppStore(getBridge());

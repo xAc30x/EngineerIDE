@@ -1,4 +1,4 @@
-import type { BackendProvider } from '../types';
+import type { BackendProvider } from './types';
 
 export interface BackendOption {
   id: BackendProvider;

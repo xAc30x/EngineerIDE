@@ -3,16 +3,27 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: Milestone 1 – desktop shell and dual-mode UI
+## Status: two-window shell (Milestone 1 + roadmap Phase 0)
 
-- **Workspace mode** – centered chat, a collapsible Artifacts/Design side panel,
+The app runs as two windows that stay open together, so they can sit side by
+side or on separate monitors:
+
+- **Workspace window** – centered chat, a collapsible Artifacts/Design side panel,
   sidebar sections, and placeholder pages for Projects, Artifacts, Scheduled, and Design.
-- **IDE mode** – file explorer, editor placeholder, and a docked agent chat that
-  shows the same conversation as Workspace mode.
-- Switch modes with the header button or `Ctrl+E` (`Cmd+E` on macOS).
+- **IDE window** – file explorer, editor placeholder, and a docked agent chat.
+- The header button (`IDE` in the Workspace window, `Agent Window` in the IDE
+  window) or `Ctrl+E` (`Cmd+E` on macOS) opens the other window, or brings it to
+  the front if it is already open. The current window stays open.
+- Both windows show the same conversation, project folder, and AI backend. That
+  state lives in the Electron main process and is sent to both windows on every
+  change. The unsent chat draft and the panel toggles belong to each window.
+- Closing a window closes only that window; the other one stays open, and its
+  header button brings the closed one back as you left it. The app quits when
+  you close the last window on screen.
 
 Not included yet: AI backends (messages are stored but not answered), a code
-editor, a terminal, and saving data between runs.
+editor, a terminal, and saving data between runs. The order they will be built
+in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -30,7 +41,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` starts the Vite dev server and opens the desktop window. Code
+`npm run dev` starts the Vite dev server and opens the Workspace window. Code
 changes reload automatically. Press `Ctrl+C` in the terminal to stop.
 
 ## Other commands
@@ -45,3 +56,4 @@ changes reload automatically. Press `Ctrl+C` in the terminal to stop.
 ## Project rules
 
 The architectural rules and code conventions are in [CLAUDE.md](CLAUDE.md).
+The build plan, with what each phase may change, is in [docs/ROADMAP.md](docs/ROADMAP.md).

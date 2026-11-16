@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { FileNode, IpcResult, SelectedFolder } from '../src/types';
+import type { FileNode, IpcResult, SelectedFolder } from '../shared/types';
 
 const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ENOENT: 'The folder no longer exists.',

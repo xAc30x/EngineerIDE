@@ -10,6 +10,7 @@ import {
 import { type ReactNode, useState } from 'react';
 import { NAV_TAB_LABELS } from '../../config/navigation';
 import { useProjectFolder } from '../../hooks/useProjectFolder';
+import { canShowWindows, showWindow } from '../../lib/windowKind';
 import { useAppStore } from '../../store/useAppStore';
 import type { NavTab } from '../../types';
 import { ChatPanel } from '../shared/ChatPanel';
@@ -100,13 +101,12 @@ function EmptyCard({ text }: { text: string }) {
 
 function ProjectsPage() {
   const { projectPath, projectName, error, selectFolder } = useProjectFolder();
-  const setActiveMode = useAppStore((state) => state.setActiveMode);
 
   return (
     <Page
       icon={FolderKanban}
       title={NAV_TAB_LABELS.projects}
-      description="The project folder is shared by the chat and by IDE mode."
+      description="The project folder is shared by the chat and by the IDE window."
     >
       <div className="rounded-xl border border-line bg-surface p-4">
         <p className="text-xs font-medium text-subtle">Active folder</p>
@@ -125,13 +125,13 @@ function ProjectsPage() {
             <FolderOpen className="size-3.5" aria-hidden />
             {projectPath === null ? 'Open folder' : 'Change folder'}
           </button>
-          {projectPath !== null && (
+          {projectPath !== null && canShowWindows() && (
             <button
               type="button"
-              onClick={() => setActiveMode('ide')}
+              onClick={() => showWindow('ide')}
               className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-hover hover:text-fg"
             >
-              Open in IDE mode
+              Open in IDE window
             </button>
           )}
         </div>
@@ -168,7 +168,7 @@ const PLACEHOLDER_PAGES: Readonly<
   },
 };
 
-/** Workspace Mode: centered chat with an optional artifacts pane, or a sidebar page. */
+/** Workspace window content: centered chat with an optional artifacts pane, or a sidebar page. */
 export function WorkspaceView() {
   const activeNavTab = useAppStore((state) => state.activeNavTab);
   const isArtifactsPanelOpen = useAppStore((state) => state.isArtifactsPanelOpen);

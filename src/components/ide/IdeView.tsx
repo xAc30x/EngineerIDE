@@ -84,7 +84,7 @@ function ProjectPanes({ projectPath, projectName }: ProjectPanesProps) {
   );
 }
 
-/** IDE Mode: file explorer (left), editor area (center), docked agent chat (right). */
+/** IDE window content: file explorer (left), editor area (center), docked agent chat (right). */
 export function IdeView() {
   const { projectPath, projectName } = useProjectFolder();
 
