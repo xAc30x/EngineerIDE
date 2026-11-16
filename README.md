@@ -3,7 +3,7 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: two-window shell (Milestone 1, roadmap Phases 0 and 2a)
+## Status: two-window shell with streamed replies (roadmap Phases 0, 2a, and 2b)
 
 The app runs as two windows that stay open together, so they can sit side by
 side or on separate monitors:
@@ -21,13 +21,18 @@ side or on separate monitors:
   header button brings the closed one back as you left it. The app quits when
   you close the last window on screen.
 
-Behind the scenes the main process can now stream long text output to both
-windows (roadmap Phase 2a). A window that is reloaded or reopened mid-stream
-catches up on the text so far, and either window can cancel a stream. Nothing
-in the interface uses it yet; the chat will in Phase 2b.
+- A message gets a reply that streams into both windows as it is written.
+  Either window can stop it with **Stop**, and a window reloaded mid-reply
+  shows the text so far, then continues. A chat replies to one message at a
+  time; sending another while it is replying is refused with a message.
 
-Not included yet: AI backends (messages are stored but not answered), a code
-editor, a terminal, and saving data between runs. The order they will be built
+No real AI backend is connected yet (Claude CLI arrives in Phase 2c, API keys
+in 2d). In a development build (`npm run dev`) every backend answers with a
+built-in test reply that starts with `[Test reply]`; a packaged build says the
+backend is not available yet.
+
+Not included yet: real AI backends, a code editor, a terminal, and saving data
+between runs. The order they will be built
 in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements

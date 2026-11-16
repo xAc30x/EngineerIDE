@@ -6,6 +6,7 @@ import {
   findThread,
   parseAction,
   PINNED_SECTION_ID,
+  type ReplyOutcome,
   type SharedAction,
   type SharedState,
 } from '../shared/appState';
@@ -122,12 +123,11 @@ describe('sendMessage', () => {
     });
   });
 
-  it('records a system notice naming the backend instead of an assistant reply', () => {
-    run({ type: 'setSelectedBackend', backend: 'openrouter' });
+  it('adds only the user message; the reply is started by the main process', () => {
     send('Hello');
-    const messages = activeThread()?.messages ?? [];
-    expect(messages.map((message) => message.role)).toEqual(['user', 'system']);
-    expect(messages[1]?.content).toContain('OpenRouter');
+    const thread = activeThread();
+    expect(thread?.messages.map((message) => message.role)).toEqual(['user']);
+    expect(thread?.runningReply).toBeNull();
   });
 
   it('ignores blank messages', () => {
@@ -254,6 +254,94 @@ describe('applyAction', () => {
   });
 });
 
+describe('startReply and finishReply', () => {
+  function startedThread(streamId = 's1'): string {
+    send('Hello');
+    const threadId = state.activeThreadId as string;
+    run({ type: 'startReply', threadId, streamId, provider: 'claude-cli' });
+    return threadId;
+  }
+
+  it('records the running reply on the thread', () => {
+    const threadId = startedThread();
+    expect(findThread(state, threadId)?.runningReply).toEqual({ streamId: 's1', provider: 'claude-cli' });
+  });
+
+  it('ignores a second start while a reply is running', () => {
+    const threadId = startedThread('s1');
+    const before = state;
+    run({ type: 'startReply', threadId, streamId: 's2', provider: 'openrouter' });
+    expect(state).toBe(before);
+  });
+
+  it('ignores a start for an unknown thread', () => {
+    const before = state;
+    run({ type: 'startReply', threadId: 'nope', streamId: 's1', provider: 'claude-cli' });
+    expect(state).toBe(before);
+  });
+
+  it('clears the running reply when it finishes', () => {
+    const threadId = startedThread();
+    run({ type: 'finishReply', threadId, streamId: 's1', outcome: { status: 'completed', text: 'Hi' } });
+    expect(findThread(state, threadId)?.runningReply).toBeNull();
+  });
+
+  function finish(outcome: ReplyOutcome): Thread | undefined {
+    const threadId = startedThread();
+    run({ type: 'finishReply', threadId, streamId: 's1', outcome });
+    return findThread(state, threadId);
+  }
+
+  function addedMessages(thread: Thread | undefined): Array<[string, string]> {
+    return (thread?.messages ?? []).slice(1).map((message) => [message.role, message.content]);
+  }
+
+  it('stores a completed reply as an assistant message', () => {
+    expect(addedMessages(finish({ status: 'completed', text: 'Hi there' }))).toEqual([
+      ['assistant', 'Hi there'],
+    ]);
+  });
+
+  it('adds nothing for a completed reply with no text', () => {
+    expect(addedMessages(finish({ status: 'completed', text: '  ' }))).toEqual([]);
+  });
+
+  it('keeps the partial text of a stopped reply and notes that it was stopped', () => {
+    expect(addedMessages(finish({ status: 'cancelled', text: 'Half a' }))).toEqual([
+      ['assistant', 'Half a'],
+      ['system', 'Reply stopped.'],
+    ]);
+  });
+
+  it('notes a stopped reply that had produced no text', () => {
+    expect(addedMessages(finish({ status: 'cancelled', text: '' }))).toEqual([
+      ['system', 'Reply stopped.'],
+    ]);
+  });
+
+  it('keeps the partial text of a failed reply and shows the error', () => {
+    expect(
+      addedMessages(finish({ status: 'failed', text: 'Some', error: 'Quota used up' })),
+    ).toEqual([
+      ['assistant', 'Some'],
+      ['system', 'The reply failed: Quota used up'],
+    ]);
+  });
+
+  it('shows a fallback when a failure has no error text', () => {
+    expect(addedMessages(finish({ status: 'failed', text: '' }))).toEqual([
+      ['system', 'The reply failed: unknown error'],
+    ]);
+  });
+
+  it('ignores a finish for a stream that is not the running reply', () => {
+    const threadId = startedThread('s1');
+    const before = state;
+    run({ type: 'finishReply', threadId, streamId: 'stale', outcome: { status: 'completed', text: 'Old' } });
+    expect(state).toBe(before);
+  });
+});
+
 describe('parseAction', () => {
   it('accepts every action a window may send', () => {
     const actions: SharedAction[] = [
@@ -307,6 +395,20 @@ describe('parseAction', () => {
     for (const payload of invalid) {
       expect(parseAction(payload)).toBeNull();
     }
+  });
+
+  it('rejects startReply and finishReply, which only the main process may dispatch', () => {
+    expect(
+      parseAction({ type: 'startReply', threadId: 't1', streamId: 's1', provider: 'claude-cli' }),
+    ).toBeNull();
+    expect(
+      parseAction({
+        type: 'finishReply',
+        threadId: 't1',
+        streamId: 's1',
+        outcome: { status: 'completed', text: 'Hi' },
+      }),
+    ).toBeNull();
   });
 
   it('rejects setActiveProject, which only the main process may dispatch', () => {

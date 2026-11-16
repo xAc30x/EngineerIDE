@@ -1,9 +1,11 @@
-import { ArrowUp, FolderOpen, Info } from 'lucide-react';
-import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
+import { ArrowUp, FolderOpen, Info, Square } from 'lucide-react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { BACKEND_OPTIONS, isBackendProvider } from '../../../shared/backends';
 import { useProjectFolder } from '../../hooks/useProjectFolder';
+import { useStream } from '../../hooks/useStream';
+import { getBridge } from '../../lib/bridge';
 import { selectActiveThread, useAppStore } from '../../store/useAppStore';
-import type { Message } from '../../types';
+import type { Message, ProviderAvailability, RunningReply } from '../../types';
 
 /** `centered` is the wide Workspace layout; `docked` fits the IDE window's side panel. */
 export type ChatPanelVariant = 'centered' | 'docked';
@@ -62,6 +64,65 @@ function MessageItem({ message }: { message: Message }) {
 }
 
 /**
+ * The reply being produced, read from its stream. When it finishes, main
+ * stores it as a message and clears `runningReply`, which unmounts this.
+ */
+function StreamingReply({ threadId, reply }: { threadId: string; reply: RunningReply }) {
+  const { text, error } = useStream(reply.streamId);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Cancelling by thread (not by stream) lets main decide which reply to stop.
+  const stop = async () => {
+    const result = await getBridge()?.cancelReply(threadId);
+    setCancelError(result === undefined || result.ok ? null : result.error);
+  };
+
+  return (
+    <div className="flex flex-col gap-2" aria-live="polite" aria-busy="true">
+      <div className="leading-relaxed break-words whitespace-pre-wrap">
+        {text}
+        <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-muted align-text-bottom" aria-hidden />
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void stop()}
+          className="flex h-6 items-center gap-1 rounded-md border border-line px-2 text-xs text-muted transition-colors hover:bg-hover hover:text-fg"
+        >
+          <Square className="size-3" aria-hidden />
+          Stop
+        </button>
+        {(error ?? cancelError) !== null && (
+          <span role="alert" className="text-xs text-danger">
+            {error ?? cancelError}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Each backend's availability, fetched once per mount. Empty without a bridge. */
+function useProviderAvailability(): ProviderAvailability[] {
+  const [providers, setProviders] = useState<ProviderAvailability[]>([]);
+  useEffect(() => {
+    let isMounted = true;
+    getBridge()
+      ?.listProviders()
+      .then((result) => {
+        if (isMounted && result.ok) {
+          setProviders(result.value);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+  return providers;
+}
+
+/**
  * Conversation view and message input. Both windows render this component.
  * The thread and the selected backend are shared through the main process;
  * the unsent draft belongs to each window.
@@ -75,21 +136,57 @@ export function ChatPanel({ variant }: ChatPanelProps) {
   const setSelectedBackend = useAppStore((state) => state.setSelectedBackend);
   const sendMessage = useAppStore((state) => state.sendMessage);
   const { projectPath, projectName, error: folderError, selectFolder } = useProjectFolder();
+  const providers = useProviderAvailability();
+  const [sendError, setSendError] = useState<string | null>(null);
+  // A ref, not state: a second Enter can arrive before React re-renders.
+  const isSendingRef = useRef(false);
 
   const messages = thread?.messages ?? [];
+  const runningReply = thread?.runningReply ?? null;
+  // Not blocked while replying: main owns the run lock and says why it refuses.
   const canSend = draft.trim() !== '';
 
-  const submit = () => {
-    if (!canSend) {
+  // A refusal stops applying once the reply it was waiting on has ended.
+  useEffect(() => {
+    if (runningReply === null) {
+      setSendError(null);
+    }
+  }, [runningReply]);
+
+  const submit = async () => {
+    if (!canSend || isSendingRef.current) {
       return;
     }
-    sendMessage(draft);
-    setComposerDraft('');
+    const bridge = getBridge();
+    if (bridge === undefined) {
+      // Outside the desktop app there is no provider: keep the message only.
+      sendMessage(draft);
+      setComposerDraft('');
+      return;
+    }
+    const sent = draft;
+    isSendingRef.current = true;
+    try {
+      const result = await bridge.sendChatMessage(thread?.id ?? null, sent);
+      if (result.ok) {
+        setSendError(null);
+        // Keep anything typed while the request was on its way.
+        if (useAppStore.getState().composerDraft === sent) {
+          setComposerDraft('');
+        }
+      } else {
+        setSendError(result.error);
+      }
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : String(error));
+    } finally {
+      isSendingRef.current = false;
+    }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    submit();
+    void submit();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -97,7 +194,7 @@ export function ChatPanel({ variant }: ChatPanelProps) {
     // method composition (for example Japanese or Chinese) must not send.
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      submit();
+      void submit();
     }
   };
 
@@ -128,6 +225,9 @@ export function ChatPanel({ variant }: ChatPanelProps) {
             {messages.map((message) => (
               <MessageItem key={message.id} message={message} />
             ))}
+            {thread !== undefined && runningReply !== null && (
+              <StreamingReply key={runningReply.streamId} threadId={thread.id} reply={runningReply} />
+            )}
           </div>
         </div>
       )}
@@ -162,11 +262,15 @@ export function ChatPanel({ variant }: ChatPanelProps) {
               aria-label="AI backend"
               className="h-7 min-w-0 cursor-pointer rounded-md bg-transparent px-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-fg"
             >
-              {BACKEND_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
+              {BACKEND_OPTIONS.map((option) => {
+                const availability = providers.find((provider) => provider.id === option.id);
+                const isUnavailable = availability?.available === false;
+                return (
+                  <option key={option.id} value={option.id} title={availability?.reason}>
+                    {isUnavailable ? `${option.label} (unavailable)` : option.label}
+                  </option>
+                );
+              })}
             </select>
 
             <div className="flex-1" />
@@ -175,13 +279,18 @@ export function ChatPanel({ variant }: ChatPanelProps) {
               type="submit"
               disabled={!canSend}
               aria-label="Send message"
-              title="Send message (Enter)"
+              title={runningReply === null ? 'Send message (Enter)' : 'Replying…'}
               className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-30"
             >
               <ArrowUp className="size-4" aria-hidden />
             </button>
           </div>
         </div>
+        {sendError !== null && (
+          <p role="alert" className="mt-1.5 px-1 text-xs text-danger">
+            {sendError}
+          </p>
+        )}
         {folderError !== null && (
           <p role="alert" className="mt-1.5 px-1 text-xs text-danger">
             {folderError}

@@ -56,7 +56,7 @@ request. A red CI run means the phase is not done.
 | --- | --- | --- |
 | 0 | Two-window architecture | Done |
 | 2a | Stream channel | Done |
-| 2b | Provider contract | Not started |
+| 2b | Provider contract | Done |
 | 2c | Claude CLI provider | Not started |
 | 2d | API-key providers | Not started |
 | 3a–3c | Persistence | Not started |
@@ -178,6 +178,35 @@ lock, a fake provider for tests), `shared/ipc/ai.ts`, `electron/ipc/ai.ts`,
   windows show the same reply.
 - When a stream completes, main writes the assistant message into shared state.
 - The Milestone 1 "not connected" system notice is removed.
+
+**As built.**
+- `electron/ai/adapter.ts` holds `AIProviderAdapter`, `AIChatRequest` (with a
+  required `signal`), and `AIStreamEvent`. `shared/types.ts` keeps only the
+  serialisable `BackendProvider`, `AIProviderStatus`, and `ProviderAvailability`.
+- `ProviderRegistry` (`registry.ts`) maps a backend to its adapter. Built with
+  `allowTestStandIn: !app.isPackaged`, so in development a backend with no
+  adapter answers with `createFakeProvider` (about 10 s, prefixed
+  `[Test reply] `) and is listed as available; a packaged build refuses with
+  "<label> is not available yet." Phases 2c/2d call `registry.register()`.
+- `ReplyRunner` (`replies.ts`) is the only way a reply starts. `send()`
+  validates first, then, with no `await` until the lock is taken, refuses a
+  thread whose `runningReply` is set, creates a thread if needed, and
+  dispatches `sendMessage`, `hub.create()`, and `startReply`. A refused send
+  changes nothing. Async provider checks belong before the lock check. When the
+  stream finishes, `finishReply` is dispatched, then `hub.release()` (in a
+  `finally`).
+- `Thread.runningReply: { streamId, provider } | null` is the run lock both
+  windows see. `startReply`/`finishReply` are main-only `SharedAction`s.
+  `replyOutcomeMessages()` stores a completed reply as an assistant message,
+  and keeps a stopped or failed reply's partial text followed by a system note
+  ("Reply stopped." / "The reply failed: …"). System notes are not sent to
+  providers.
+- `ai:sendMessage`, `ai:cancelReply` (by thread id), `ai:listProviders`.
+  `ChatPanel` sends through `sendChatMessage`, shows the running reply with
+  `useStream` and a Stop button, shows a refusal under the input, and marks
+  unavailable backends in the selector.
+- The `sendMessage` action stays a `RendererAction` (it adds a message with no
+  reply); the chat uses it only when there is no bridge.
 
 **Done when.**
 - The fake provider's reply streams into the chat in both windows.

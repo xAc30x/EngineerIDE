@@ -37,6 +37,14 @@ export interface Thread {
   createdAt: number;
   /** Unix time in milliseconds. */
   updatedAt: number;
+  /** The reply being produced for this thread, or `null`. Set by the main process only. */
+  runningReply: RunningReply | null;
+}
+
+/** A reply in progress. Its text is in the stream with this id until it finishes. */
+export interface RunningReply {
+  streamId: string;
+  provider: BackendProvider;
 }
 
 /** `pinned` is the single built-in section; `custom` sections are user-created. */
@@ -77,38 +85,20 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export type BackendProvider = 'claude-cli' | 'openrouter' | 'anthropic-api' | 'openai-api';
 
-export interface AIChatRequest {
-  /** Full conversation so far, oldest first. */
-  messages: readonly Message[];
-  /** Folder the conversation is working in, if one is selected. */
-  projectPath: string | null;
-  /** Provider-specific model name. The adapter picks its default when omitted. */
-  model?: string;
-  /** Lets the caller cancel a running request. */
-  signal?: AbortSignal;
-}
-
-export type AIStreamEvent =
-  | { type: 'text-delta'; text: string }
-  | { type: 'completed' }
-  | { type: 'error'; message: string };
-
 export interface AIProviderStatus {
   available: boolean;
   /** Explains why the provider cannot be used, for display to the user. */
   reason?: string;
 }
 
-/**
- * One implementation per backend. UI components depend only on this
- * interface, so a backend can be added or replaced without changing them.
- */
-export interface AIProviderAdapter {
-  readonly id: BackendProvider;
-  /** Name shown in the backend selector. */
-  readonly label: string;
-  /** Reports whether the backend is installed/configured and ready to use. */
-  checkAvailability(): Promise<AIProviderStatus>;
-  /** Sends the conversation and yields the reply as it is produced. */
-  streamChat(request: AIChatRequest): AsyncIterable<AIStreamEvent>;
+/** One backend's availability, as the backend selector shows it. Serialisable. */
+export interface ProviderAvailability extends AIProviderStatus {
+  id: BackendProvider;
+  label: string;
 }
+
+/**
+ * The adapter interface itself (`AIProviderAdapter`) lives in
+ * `electron/ai/adapter.ts`: it uses `AbortSignal` and `AsyncIterable`, which
+ * cannot cross IPC, and providers run only in the main process.
+ */
