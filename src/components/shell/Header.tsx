@@ -1,73 +1,58 @@
 import { PanelLeft, PanelRight } from 'lucide-react';
 import { NAV_TAB_LABELS } from '../../config/navigation';
 import { formatShortcut } from '../../lib/platform';
+import {
+  canShowWindows,
+  otherWindowKind,
+  showWindow,
+  WINDOW_KIND,
+  WINDOW_LABELS,
+} from '../../lib/windowKind';
 import { DEFAULT_THREAD_TITLE, selectActiveThread, useAppStore } from '../../store/useAppStore';
-import type { AppMode } from '../../types';
+import type { WindowKind } from '../../types';
 import { IconButton } from '../shared/IconButton';
 
-const MODE_OPTIONS: readonly { mode: AppMode; label: string }[] = [
-  { mode: 'workspace', label: 'Workspace' },
-  { mode: 'ide', label: 'IDE' },
-];
+/** Text of the header button, by the window it is shown in. It names where the button leads. */
+const SWITCH_BUTTON_LABELS: Readonly<Record<WindowKind, string>> = {
+  workspace: 'IDE',
+  ide: 'Agent Window',
+};
 
-function ModeToggle() {
-  const activeMode = useAppStore((state) => state.activeMode);
-  const setActiveMode = useAppStore((state) => state.setActiveMode);
-  const shortcut = formatShortcut('E');
+/**
+ * One button that opens the other window, or brings it to the front when it
+ * is already open. This window stays open.
+ */
+function WindowSwitchButton() {
+  const target = otherWindowKind(WINDOW_KIND);
+  const isAvailable = canShowWindows();
+  const title = isAvailable
+    ? `Open the ${WINDOW_LABELS[target]} window (${formatShortcut('E')})`
+    : `The ${WINDOW_LABELS[target]} window is only available in the desktop app`;
 
   return (
-    <div className="flex items-center gap-2">
-      <div
-        role="group"
-        aria-label="View mode"
-        className="flex rounded-lg border border-line bg-sidebar p-0.5"
-      >
-        {MODE_OPTIONS.map(({ mode, label }) => {
-          const isActive = mode === activeMode;
-          return (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={isActive}
-              title={`${label} mode (${shortcut} switches modes)`}
-              onClick={() => setActiveMode(mode)}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                isActive ? 'bg-hover text-fg' : 'text-muted hover:text-fg'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-      <kbd className="rounded border border-line px-1.5 py-0.5 font-sans text-[11px] text-subtle">
-        {shortcut}
-      </kbd>
-    </div>
+    <button
+      type="button"
+      disabled={!isAvailable}
+      title={title}
+      onClick={() => showWindow(target)}
+      className="shrink-0 rounded-lg border border-line bg-sidebar px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {SWITCH_BUTTON_LABELS[WINDOW_KIND]}
+    </button>
   );
 }
 
-/** Top bar of the shell: sidebar toggle, current title, and the mode switch. */
-export function Header() {
-  const activeMode = useAppStore((state) => state.activeMode);
+/** Top bar of the Workspace window: sidebar toggle, title, IDE button, artifacts toggle. */
+function WorkspaceHeader() {
   const activeNavTab = useAppStore((state) => state.activeNavTab);
   const thread = useAppStore(selectActiveThread);
-  const projectName = useAppStore((state) => state.activeProjectName);
   const isSidebarCollapsed = useAppStore((state) => state.isSidebarCollapsed);
   const isArtifactsPanelOpen = useAppStore((state) => state.isArtifactsPanelOpen);
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
   const toggleArtifactsPanel = useAppStore((state) => state.toggleArtifactsPanel);
 
-  const isWorkspaceChat = activeMode === 'workspace' && activeNavTab === 'chat';
-
-  let title: string;
-  if (activeMode === 'ide') {
-    title = projectName ?? 'No folder open';
-  } else if (activeNavTab === 'chat') {
-    title = thread?.title ?? DEFAULT_THREAD_TITLE;
-  } else {
-    title = NAV_TAB_LABELS[activeNavTab];
-  }
+  const isChat = activeNavTab === 'chat';
+  const title = isChat ? (thread?.title ?? DEFAULT_THREAD_TITLE) : NAV_TAB_LABELS[activeNavTab];
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-canvas px-3">
@@ -80,9 +65,9 @@ export function Header() {
 
       <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</h1>
 
-      <ModeToggle />
+      <WindowSwitchButton />
 
-      {isWorkspaceChat && (
+      {isChat && (
         <IconButton
           label={`${isArtifactsPanelOpen ? 'Hide' : 'Show'} artifacts panel`}
           isActive={isArtifactsPanelOpen}
@@ -93,4 +78,23 @@ export function Header() {
       )}
     </header>
   );
+}
+
+/** Top bar of the IDE window: the open folder's name and the Agent Window button. */
+function IdeHeader() {
+  const projectName = useAppStore((state) => state.activeProjectName);
+
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-canvas px-4">
+      <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+        {projectName ?? 'No folder open'}
+      </h1>
+      <WindowSwitchButton />
+    </header>
+  );
+}
+
+/** Top bar of the current window. */
+export function Header() {
+  return WINDOW_KIND === 'ide' ? <IdeHeader /> : <WorkspaceHeader />;
 }

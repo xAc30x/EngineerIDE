@@ -131,7 +131,7 @@ function ProjectBar() {
   );
 }
 
-/** Left column of the shell. It stays in place in both Workspace and IDE mode. */
+/** Left column of the Workspace window. */
 export function Sidebar() {
   const activeNavTab = useAppStore((state) => state.activeNavTab);
   const setActiveNavTab = useAppStore((state) => state.setActiveNavTab);

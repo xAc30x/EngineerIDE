@@ -1,16 +1,19 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import type { ElectronAPI } from '../src/types';
-import { IPC_CHANNELS } from './channels';
+import { contextBridge } from 'electron';
+import type { ElectronAPI } from '../shared/electronApi';
+import { fsApi } from './preload/fs';
+import { stateApi } from './preload/state';
+import { windowsApi } from './preload/windows';
 
 /**
- * The only surface the renderer can use to reach the operating system.
- * Each method maps to exactly one IPC channel; `ipcRenderer` itself is never
- * exposed.
+ * The only surface a window can use to reach the operating system and the
+ * main process. Each IPC domain contributes its methods from
+ * `electron/preload/<domain>.ts`; `ipcRenderer` itself is never exposed.
  */
 const electronAPI: ElectronAPI = {
   platform: process.platform,
-  selectFolder: () => ipcRenderer.invoke(IPC_CHANNELS.selectFolder),
-  readDir: (dirPath) => ipcRenderer.invoke(IPC_CHANNELS.readDir, dirPath),
+  ...fsApi,
+  ...stateApi,
+  ...windowsApi,
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
