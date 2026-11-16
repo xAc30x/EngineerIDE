@@ -12,7 +12,7 @@ time and follow its rules ("How to work a phase").
 2. **Cross-Platform Path Safety:** Always use Node's `path.join()` and `path.resolve()` in `electron/`. Never hardcode `/` or `\` separators or OS-specific paths.
 3. **Provider-Agnostic AI Contract:** `AIProviderAdapter` in `shared/types.ts` supports `'claude-cli' | 'openrouter' | 'anthropic-api' | 'openai-api'`, so backends can be plugged in without rewriting UI components. Providers run in the main process (roadmap Phase 2b).
 4. **Dependency Discipline:** Add a native C++ module (for example `better-sqlite3` or `node-pty`) only in the roadmap phase that names it, and at most one per phase, so `npm install` keeps running without node-gyp build errors.
-5. **Verification Gate:** Before concluding, meet the shared definition of done in the roadmap: `npx tsc --noEmit`, `npm test`, `npm run build`, and a check observed in the running app with both windows open.
+5. **Verification Gate:** Before concluding, meet the shared definition of done in the roadmap: `npx tsc --noEmit`, `npm test`, `npm run build`, and a check observed in the running app with both windows open. CI (`.github/workflows/ci.yml`) runs the first three on every pull request and on `main`; the two-window check is manual.
 
 ## Commands
 

@@ -18,6 +18,9 @@ by a session that has read only this file and [CLAUDE.md](../CLAUDE.md).
 
 ### Shared definition of done
 
+CI (`.github/workflows/ci.yml`) runs the first three items on every pull
+request. A red CI run means the phase is not done.
+
 - `npx tsc --noEmit` reports no errors.
 - `npm test` passes, including the tests the phase names. No existing test is
   weakened or deleted; a test that describes removed behaviour is replaced
