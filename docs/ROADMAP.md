@@ -57,7 +57,7 @@ request. A red CI run means the phase is not done.
 | 0 | Two-window architecture | Done |
 | 2a | Stream channel | Done |
 | 2b | Provider contract | Done |
-| 2c | Claude CLI provider | Not started |
+| 2c | Claude CLI provider | Done |
 | 2d | API-key providers | Not started |
 | 3a–3c | Persistence | Not started |
 | 4a–4c | Files and editor | Not started |
@@ -225,6 +225,31 @@ lock, a fake provider for tests), `shared/ipc/ai.ts`, `electron/ipc/ai.ts`,
 - A real reply streams into both windows.
 - When the CLI is missing or not signed in, the backend selector shows why.
 - Cancelling ends the child process. No child process survives app quit.
+
+**As built.**
+- `createClaudeCliProvider()` (`electron/ai/providers/claudeCli.ts`) runs one
+  `claude --print --output-format stream-json --include-partial-messages`
+  child per reply, in the active project folder. Tools and MCP servers are
+  off (`--tools ""`, `--strict-mcp-config`), so it is chat only. The user's
+  `~/.claude` settings are skipped (`--setting-sources ""`), so their hooks and
+  output style do not run or change replies; sign-in still works. Sessions are
+  not saved (`--no-session-persistence`).
+- `buildPrompt()` writes the conversation into one prompt (`User:` /
+  `Assistant:` turns, system notes left out), sent on stdin, never as an
+  argument. A single message is sent as it is.
+- `parseStreamLine()` turns `text_delta` events into text and the `result`
+  line into completed or an error. A reply whose text arrives only in the
+  result is still shown.
+- `checkAvailability()` runs `claude --version` (missing: "Claude CLI not
+  found") and `claude auth status --json`, reading only `loggedIn` (false:
+  "not signed in"). Nothing from the status output is stored or logged.
+- Cancel sends SIGTERM, then SIGKILL after 2 s. `stopAll()` kills every
+  running child; `electron/ipc/ai.ts` registers the provider and calls it on
+  `will-quit` (approved edit outside Owns).
+- `spawn` is injectable, so `tests/ai.claudeCli.test.ts` uses a fake child
+  process and never runs the real CLI.
+- On Windows only a `claude.exe` on PATH is found
+  (no shell, so an npm `claude.cmd` shim is not); not yet tested on Windows.
 
 ### Phase 2d – API-key providers
 
