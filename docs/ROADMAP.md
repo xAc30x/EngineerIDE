@@ -55,7 +55,7 @@ request. A red CI run means the phase is not done.
 | Phase | Title | Status |
 | --- | --- | --- |
 | 0 | Two-window architecture | Done |
-| 2a | Stream channel | Not started |
+| 2a | Stream channel | Done |
 | 2b | Provider contract | Not started |
 | 2c | Claude CLI provider | Not started |
 | 2d | API-key providers | Not started |
@@ -130,6 +130,24 @@ in other components.
 - `stream:cancel` works from either window.
 - Finished streams are dropped from the buffer once their text is stored in
   shared state.
+
+**As built.**
+- `electron/streams/streamHub.ts` (no Electron imports) owns the streams.
+  `create()` returns a `StreamWriter` (`id`, `signal`, `append`, `complete`,
+  `fail`, `finished`); `cancel`, `release`, `getText`, `getStatus`, and
+  `dispose` cover the rest. Each subscriber has a cursor, so replay and live
+  chunks use the same path and never repeat or skip a chunk.
+- `registerStreamsIpc()` creates the hub and returns it; Phase 2b keeps that
+  return value in `electron/main.ts` and passes it to its own domain.
+- Main sends `StreamDelta`s (`streamId`, `startIndex`, `chunks`, `status`,
+  `error`) on `stream:data` to the windows that subscribed. Every delta carries
+  the status; finishing sends pending chunks with the final status at once.
+- `src/hooks/useStream.ts` follows one stream in a window. Its pure
+  `applyStreamDelta()` skips chunks the window has and reports a gap instead
+  of leaving a hole.
+- `electronAPI.startTestStream()` starts a fake numbered stream
+  (`electron/streams/testStream.ts`). It is refused in a packaged app.
+- No component mounts `useStream` yet; Phase 2b's chat is its first user.
 
 **Done when.**
 - A test provider's output appears in both windows as it is produced.

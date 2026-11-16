@@ -2,6 +2,7 @@ import { contextBridge } from 'electron';
 import type { ElectronAPI } from '../shared/electronApi';
 import { fsApi } from './preload/fs';
 import { stateApi } from './preload/state';
+import { streamsApi } from './preload/streams';
 import { windowsApi } from './preload/windows';
 
 /**
@@ -13,6 +14,7 @@ const electronAPI: ElectronAPI = {
   platform: process.platform,
   ...fsApi,
   ...stateApi,
+  ...streamsApi,
   ...windowsApi,
 };
 

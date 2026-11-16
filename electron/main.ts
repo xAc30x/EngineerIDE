@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { AppStateStore } from './appStateStore';
 import { registerFsIpc } from './ipc/fs';
 import { registerStateIpc } from './ipc/state';
+import { registerStreamsIpc } from './ipc/streams';
 import { registerWindowsIpc } from './ipc/windows';
 import { ProjectFileAccess } from './projectFiles';
 import { WindowRegistry } from './windows';
@@ -27,6 +28,7 @@ app
     // One line per IPC domain; handlers live in electron/ipc/<domain>.ts.
     registerFsIpc({ windows, projectFiles, appState });
     registerStateIpc({ windows, appState });
+    registerStreamsIpc({ windows });
     registerWindowsIpc({ windows });
     windows.show('workspace');
   })

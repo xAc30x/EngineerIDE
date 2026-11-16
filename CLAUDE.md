@@ -37,11 +37,13 @@ time and follow its rules ("How to work a phase").
   - `windows.ts` – window registry: focus-or-create, close and quit rules, trusted senders.
   - `appStateStore.ts` – owns the shared state and its version (no Electron imports, unit-testable).
   - `projectFiles.ts` – folder access rules (no Electron imports, unit-testable).
+  - `streams/` – `streamHub.ts` owns every stream's chunks and status and batches them to subscribers (no Electron imports, unit-testable); `testStream.ts` is the development-only fake producer; `requests.ts` validates stream requests.
   - `ipc/<domain>.ts` – IPC handlers for one domain.
   - `preload/<domain>.ts` – bridge methods for one domain; `preload.ts` combines them.
 - `src/` – renderer (React). Browser APIs only. Both windows load the same bundle.
   - `store/useAppStore.ts` – one Zustand store per window: a mirror of the shared state plus that window's own UI state.
   - `lib/windowKind.ts` – which window this is, and how to open the other one.
+  - `hooks/useStream.ts` – follows one stream by id: the text so far, then live chunks, plus its status and `cancel()`.
   - `components/` – `shell/`, `sidebar/`, `workspace/`, `ide/`, `shared/`.
   - `types/index.ts` – re-exports the contracts from `shared/`.
 - `tests/` – Vitest tests. Kept outside `src/` because they use Node APIs.
@@ -60,7 +62,7 @@ time and follow its rules ("How to work a phase").
 | --- | --- | --- |
 | Shared | Main process, `electron/appStateStore.ts` | sections, threads, messages, active thread, active project, selected backend |
 | Window-local | That window's Zustand store or React state | chat draft, open sidebar page, sidebar and panel toggles, expanded folders |
-| Long-running output | Main process, by id (Phase 2a onwards) | AI replies, terminal output |
+| Long-running output | Main process, `electron/streams/streamHub.ts`, by stream id | AI replies, terminal output |
 
 - A window changes shared state only by sending an action (`electronAPI.dispatch`). It never edits its copy directly; the copy changes when main broadcasts the next snapshot.
 - New shared behaviour is a new action in `shared/appState.ts`, with a `parseAction()` case and tests. An action names the thing it changes by id (for example `threadId`) rather than relying on "the active one".
@@ -71,7 +73,11 @@ time and follow its rules ("How to work a phase").
 
 - **Request/response:** `ipcRenderer.invoke` to a handler registered with `handleFromAppWindow()` (`electron/ipc/handle.ts`). It rejects senders that are not app windows and returns `IpcResult<T>` (`{ ok: true, value } | { ok: false, error }`) instead of throwing.
 - **State channels (`state:*`):** small, consistent data, broadcast to every window as a versioned snapshot. A window ignores a snapshot that is not newer than the one it has.
-- **Stream channels (`stream:*`, Phase 2a):** large or append-only data (AI text, terminal output, artifact bodies) as keyed, batched deltas that main buffers for replay. Never put this data in a state snapshot.
+- **Stream channels (`stream:*`):** large or append-only data (AI text, terminal output, artifact bodies) as keyed, batched deltas that main buffers for replay. Never put this data in a state snapshot.
+  - A producer in main calls `hub.create()` and writes through the returned `StreamWriter`; it must stop when `writer.signal` aborts (a cancel from any window).
+  - A window registers `onStreamData` first, then calls `subscribeStream(id, knownChunks)`; main replies with the chunks from `knownChunks` on, then live ones every ~30 ms. `useStream` does this.
+  - A delta's `startIndex` says where its chunks go. A window skips chunks it already has and re-subscribes when a delta would leave a gap.
+  - Once a finished stream's text is stored elsewhere, call `hub.release(id)`.
 - Every payload that arrives in main is `unknown` and is validated before use.
 - The bridge exposes one method per channel. `ipcRenderer` and IPC event objects are never exposed. A subscription method returns an unsubscribe function.
 - Adding a domain `<d>` means adding `shared/ipc/<d>.ts`, `electron/ipc/<d>.ts`, and `electron/preload/<d>.ts`, plus one registration line each in `electron/main.ts`, `electron/preload.ts`, and `shared/electronApi.ts`.
