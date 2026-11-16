@@ -3,7 +3,7 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: two-window shell with streamed replies (roadmap Phases 0, 2a, and 2b)
+## Status: two-window shell with streamed replies (roadmap Phases 0 and 2a–2d)
 
 The app runs as two windows that stay open together, so they can sit side by
 side or on separate monitors:
@@ -32,12 +32,16 @@ missing or not signed in, the backend selector says so. Stop ends the reply,
 and quitting the app ends any reply still running. Replies are chat only: the
 CLI's tools are switched off.
 
-The API-key backends arrive in Phase 2d. Until then, in a development build
-(`npm run dev`) they answer with a built-in test reply that starts with
-`[Test reply]`; a packaged build says the backend is not available yet.
+**Anthropic API**, **OpenAI API**, and **OpenRouter** reply using your own API
+key. Open **Settings** (the gear at the bottom of the sidebar), paste a key and
+press **Save**. The key is encrypted with your system keychain (on Linux, GNOME
+Keyring or KWallet must be available; without one the app refuses to save) and
+kept on this computer; it is only ever sent to the provider it belongs to. The
+form shows only whether a key is set, never the key. Until a backend has a key,
+the backend selector says so.
 
-Not included yet: the API-key backends, a code editor, a terminal, and saving data
-between runs. The order they will be built
+Not included yet: a model picker (each API backend uses a default model), a
+code editor, a terminal, and saving chats between runs. The order they will be built
 in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements

@@ -13,7 +13,7 @@
 export type WindowKind = 'workspace' | 'ide';
 
 /** Pages of the Workspace window. `chat` is the conversation view. */
-export type NavTab = 'chat' | 'projects' | 'artifacts' | 'scheduled' | 'design';
+export type NavTab = 'chat' | 'projects' | 'artifacts' | 'scheduled' | 'design' | 'settings';
 
 // ---------------------------------------------------------------------------
 // Conversations

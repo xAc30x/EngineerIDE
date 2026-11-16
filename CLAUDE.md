@@ -37,7 +37,8 @@ time and follow its rules ("How to work a phase").
   - `windows.ts` – window registry: focus-or-create, close and quit rules, trusted senders.
   - `appStateStore.ts` – owns the shared state and its version (no Electron imports, unit-testable).
   - `projectFiles.ts` – folder access rules (no Electron imports, unit-testable).
-  - `ai/` – providers (no Electron imports, unit-testable): `adapter.ts` (the `AIProviderAdapter` contract), `registry.ts` (adapter per backend; in development a fake stand-in for backends not built yet), `replies.ts` (`ReplyRunner`: starts a reply, holds the per-thread run lock, stores the outcome), `fakeProvider.ts`, `requests.ts` (validates `ai:*` payloads), `providers/claudeCli.ts` (the Claude CLI provider: one `claude --print` child per reply, `spawn` injectable for tests, `stopAll()` on app quit).
+  - `ai/` – providers (no Electron imports, unit-testable): `adapter.ts` (the `AIProviderAdapter` contract), `registry.ts` (adapter per backend; in development a fake stand-in for backends not built yet), `replies.ts` (`ReplyRunner`: starts a reply, holds the per-thread run lock, stores the outcome), `fakeProvider.ts`, `requests.ts` (validates `ai:*` payloads), `providers/claudeCli.ts` (the Claude CLI provider: one `claude --print` child per reply, `spawn` injectable for tests, `stopAll()` on app quit), `providers/anthropicApi.ts` and `providers/openAiCompatible.ts` (API-key providers over `fetch`, injectable for tests; OpenAI and OpenRouter share one implementation), `providers/http.ts` (SSE reader and the fixed error messages: provider error text is never shown).
+  - `secrets/keyStore.ts` – API keys, encrypted (cipher and file injected, no Electron imports). `getKey()` is for providers only; windows learn only whether a key is set. The `safeStorage` cipher, which refuses Linux's `basic_text` fallback, is in `ipc/secrets.ts`.
   - `streams/` – `streamHub.ts` owns every stream's chunks and status and batches them to subscribers (no Electron imports, unit-testable); `testStream.ts` is the development-only fake producer; `requests.ts` validates stream requests.
   - `ipc/<domain>.ts` – IPC handlers for one domain.
   - `preload/<domain>.ts` – bridge methods for one domain; `preload.ts` combines them.
@@ -45,7 +46,7 @@ time and follow its rules ("How to work a phase").
   - `store/useAppStore.ts` – one Zustand store per window: a mirror of the shared state plus that window's own UI state.
   - `lib/windowKind.ts` – which window this is, and how to open the other one.
   - `hooks/useStream.ts` – follows one stream by id: the text so far, then live chunks, plus its status and `cancel()`.
-  - `components/` – `shell/`, `sidebar/`, `workspace/`, `ide/`, `shared/`.
+  - `components/` – `shell/`, `sidebar/`, `workspace/`, `ide/`, `shared/`, `settings/` (API key form).
   - `types/index.ts` – re-exports the contracts from `shared/`.
 - `tests/` – Vitest tests. Kept outside `src/` because they use Node APIs.
 - `docs/ROADMAP.md` – phases, file ownership, and definitions of done.
@@ -89,7 +90,7 @@ time and follow its rules ("How to work a phase").
 - Import direction: `src/` and `electron/` import from `shared/`. `shared/` imports only from `shared/`. `src/` never imports from `electron/`, and `electron/` never imports from `src/`. `tests/processIsolation.test.ts` enforces this.
 - `fs:readDir` only reads inside folders the user picked through the native dialog (`ProjectFileAccess` in `electron/projectFiles.ts`). Keep that check when adding file handlers.
 - `window.electronAPI` is typed as optional; renderer code must handle it being absent (use `getBridge()` in `src/lib/bridge.ts`).
-- Secrets (API keys, tokens) never go in the repo, the renderer, shared state, or logs. The production Content-Security-Policy blocks network requests from the renderer; AI backends must be reached through the main process.
+- Secrets (API keys, tokens) never go in the repo, the renderer, shared state, or logs. A key goes from the settings form to main once (`secrets:setApiKey`) and no channel returns it. Provider errors are fixed messages: never pass on text from a remote service or a caught error, which may quote the key (`tests/secrets.noLeak.test.ts` checks this). The production Content-Security-Policy blocks network requests from the renderer; AI backends must be reached through the main process.
 
 ## Testing criteria
 

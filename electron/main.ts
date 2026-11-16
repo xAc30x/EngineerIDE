@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { AppStateStore } from './appStateStore';
 import { registerAiIpc } from './ipc/ai';
 import { registerFsIpc } from './ipc/fs';
+import { registerSecretsIpc } from './ipc/secrets';
 import { registerStateIpc } from './ipc/state';
 import { registerStreamsIpc } from './ipc/streams';
 import { registerWindowsIpc } from './ipc/windows';
@@ -30,7 +31,8 @@ app
     registerFsIpc({ windows, projectFiles, appState });
     registerStateIpc({ windows, appState });
     const streams = registerStreamsIpc({ windows });
-    registerAiIpc({ windows, appState, streams });
+    const secrets = registerSecretsIpc({ windows });
+    registerAiIpc({ windows, appState, streams, secrets });
     registerWindowsIpc({ windows });
     windows.show('workspace');
   })

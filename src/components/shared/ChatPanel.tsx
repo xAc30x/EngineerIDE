@@ -102,21 +102,29 @@ function StreamingReply({ threadId, reply }: { threadId: string; reply: RunningR
   );
 }
 
-/** Each backend's availability, fetched once per mount. Empty without a bridge. */
+/**
+ * Each backend's availability, fetched on mount and again whenever the window
+ * gets focus, so a key saved in Settings shows up. Empty without a bridge.
+ */
 function useProviderAvailability(): ProviderAvailability[] {
   const [providers, setProviders] = useState<ProviderAvailability[]>([]);
   useEffect(() => {
     let isMounted = true;
-    getBridge()
-      ?.listProviders()
-      .then((result) => {
-        if (isMounted && result.ok) {
-          setProviders(result.value);
-        }
-      })
-      .catch(() => undefined);
+    const refresh = () => {
+      getBridge()
+        ?.listProviders()
+        .then((result) => {
+          if (isMounted && result.ok) {
+            setProviders(result.value);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
     return () => {
       isMounted = false;
+      window.removeEventListener('focus', refresh);
     };
   }, []);
   return providers;

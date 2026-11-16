@@ -7,4 +7,5 @@ export const NAV_TAB_LABELS: Readonly<Record<NavTab, string>> = {
   artifacts: 'Artifacts',
   scheduled: 'Scheduled',
   design: 'Design',
+  settings: 'Settings',
 };
