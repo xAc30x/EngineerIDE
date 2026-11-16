@@ -43,6 +43,9 @@ export function interruptedMessage(label: string): string {
  * Built only from `label` and `status`, never from the response body.
  */
 export function httpErrorMessage(label: string, status: number): string {
+  if (status === 400) {
+    return `${label} rejected the request (HTTP 400). If your account is out of credit, add some and try again.`;
+  }
   if (status === 401) {
     return `${label} rejected the API key (HTTP 401). Check or replace it in Settings.`;
   }

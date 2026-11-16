@@ -115,6 +115,7 @@ describe('readSseEvents', () => {
 
 describe('httpErrorMessage', () => {
   it.each([
+    [400, 'out of credit'],
     [401, 'rejected the API key'],
     [403, 'refused the request'],
     [404, 'could not find the model'],
