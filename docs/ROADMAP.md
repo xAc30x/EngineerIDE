@@ -59,7 +59,8 @@ request. A red CI run means the phase is not done.
 | 2b | Provider contract | Done |
 | 2c | Claude CLI provider | Done |
 | 2d | API-key providers | Done |
-| 3a–3c | Persistence | Not started |
+| 3a | SQLite driver decision | Done |
+| 3b–3c | Persistence | Not started |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
 | 6a–6c | Artifacts | Not started |
@@ -317,6 +318,27 @@ Detailed when it is next. Module-level plan:
   with the installed Electron provides a built-in SQLite module before adding
   a native dependency, and whether queries run in main or in a worker thread.
   A synchronous driver in main blocks IPC for both windows.
+
+  **Decision (2026-11-17): the built-in `node:sqlite` module, with every query
+  run in a worker thread.** No native dependency is added.
+  - Checked: the installed Electron 45.3.2 bundles Node 24.22.2, which provides
+    `node:sqlite` (`DatabaseSync`, SQLite 3.53.4). Run as Node inside that
+    Electron binary, it created a table, wrote and read a row, and did the same
+    inside a `worker_threads` worker. No experimental warning was printed.
+  - Why a worker: `DatabaseSync` is synchronous, so a query blocks the thread
+    that runs it. In main that would stall IPC for both windows; in a worker
+    only the worker waits.
+  - Options not chosen: `node:sqlite` directly in main (simplest, but blocks
+    IPC); `better-sqlite3` (a native module that must be rebuilt for each
+    Electron version: kept as the fallback if `node:sqlite` falls short).
+  - `tests/sqliteDriver.test.ts` checks the module in the test runtime, in a
+    worker, and in the installed Electron's own Node, so an upgrade that drops
+    it fails the tests.
+  - Left for 3b: the worker script must be bundled as its own entry with
+    `node:sqlite` kept external, and the main-to-worker message layer is new
+    code. No running-app check was possible for this decision-only phase (it
+    adds nothing visible); the checks above ran in Electron's runtime without
+    windows. The first in-app check is 3b's.
 - **3b – Storage layer.** `electron/storage/`: schema, migrations, and one
   writer, in main. No window opens the database.
 - **3c – Load on demand.** The state snapshot becomes a thread index (ids,
