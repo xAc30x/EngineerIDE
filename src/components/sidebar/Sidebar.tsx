@@ -18,7 +18,7 @@ import type { NavTab } from '../../types';
 import { IconButton } from '../shared/IconButton';
 import { SectionList } from './SectionList';
 
-const PAGE_TABS: readonly { tab: Exclude<NavTab, 'chat'>; icon: LucideIcon }[] = [
+const PAGE_TABS: readonly { tab: Exclude<NavTab, 'chat' | 'settings'>; icon: LucideIcon }[] = [
   { tab: 'projects', icon: FolderKanban },
   { tab: 'artifacts', icon: Layers },
   { tab: 'scheduled', icon: CalendarClock },
@@ -105,6 +105,8 @@ function NewSectionControl() {
 /** Bottom bar: active project folder and the settings entry point. */
 function ProjectBar() {
   const { projectPath, projectName, error, selectFolder } = useProjectFolder();
+  const activeNavTab = useAppStore((state) => state.activeNavTab);
+  const setActiveNavTab = useAppStore((state) => state.setActiveNavTab);
 
   return (
     <div className="shrink-0 border-t border-line p-2">
@@ -118,7 +120,11 @@ function ProjectBar() {
           <FolderOpen className="size-4 shrink-0" aria-hidden />
           <span className="truncate">{projectName ?? 'Open folder…'}</span>
         </button>
-        <IconButton label="Settings (available in a later milestone)" disabled>
+        <IconButton
+          label="Settings"
+          isActive={activeNavTab === 'settings'}
+          onClick={() => setActiveNavTab('settings')}
+        >
           <Settings className="size-4" aria-hidden />
         </IconButton>
       </div>

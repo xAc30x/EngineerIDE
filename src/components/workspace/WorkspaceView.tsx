@@ -5,6 +5,7 @@ import {
   Layers,
   type LucideIcon,
   Palette,
+  Settings,
   X,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -13,6 +14,7 @@ import { useProjectFolder } from '../../hooks/useProjectFolder';
 import { canShowWindows, showWindow } from '../../lib/windowKind';
 import { useAppStore } from '../../store/useAppStore';
 import type { NavTab } from '../../types';
+import { ApiKeySettings } from '../settings/ApiKeySettings';
 import { ChatPanel } from '../shared/ChatPanel';
 import { IconButton } from '../shared/IconButton';
 
@@ -149,7 +151,7 @@ function ProjectsPage() {
 }
 
 const PLACEHOLDER_PAGES: Readonly<
-  Record<Exclude<NavTab, 'chat' | 'projects'>, { icon: LucideIcon; description: string; emptyText: string }>
+  Record<Exclude<NavTab, 'chat' | 'projects' | 'settings'>, { icon: LucideIcon; description: string; emptyText: string }>
 > = {
   artifacts: {
     icon: Layers,
@@ -186,6 +188,18 @@ export function WorkspaceView() {
 
   if (activeNavTab === 'projects') {
     return <ProjectsPage />;
+  }
+
+  if (activeNavTab === 'settings') {
+    return (
+      <Page
+        icon={Settings}
+        title={NAV_TAB_LABELS.settings}
+        description="API keys for the Anthropic API, OpenAI API, and OpenRouter backends."
+      >
+        <ApiKeySettings />
+      </Page>
+    );
   }
 
   const page = PLACEHOLDER_PAGES[activeNavTab];

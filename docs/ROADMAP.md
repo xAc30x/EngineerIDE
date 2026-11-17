@@ -58,7 +58,7 @@ request. A red CI run means the phase is not done.
 | 2a | Stream channel | Done |
 | 2b | Provider contract | Done |
 | 2c | Claude CLI provider | Done |
-| 2d | API-key providers | Not started |
+| 2d | API-key providers | Done |
 | 3a–3c | Persistence | Not started |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
@@ -268,6 +268,43 @@ repo. Renderers learn only whether a key is set.
 - Each provider streams a reply once its key is saved.
 - Keys survive a restart.
 - A test proves no key appears in a state snapshot or a stream.
+
+**As built.**
+- `KeyStore` (`electron/secrets/keyStore.ts`, no Electron imports) keeps one
+  encrypted key per backend in `api-keys.json` in the user data folder
+  (written through a temporary file, mode 0600). `setKey`/`clearKey` validate
+  their `unknown` input (`parseApiKey`: printable ASCII, no spaces, at most 512
+  characters) and are serialised so two saves cannot overwrite each other.
+  `getKey` decrypts only when a reply starts; nothing else reads the key.
+- `electron/ipc/secrets.ts` supplies the cipher: Electron `safeStorage`'s async
+  API. On Linux it refuses the `basic_text` fallback (no keyring), so saving
+  fails with a message instead of storing a weakly protected key.
+- `secrets:setApiKey`, `secrets:clearApiKey`, `secrets:listApiKeys`
+  (`{ id, isSet }[]`). There is no channel that returns a key.
+- `anthropicApi.ts` (Messages API, `anthropic-version: 2026-10-21`, default
+  model `claude-opus-5-5`) and `openAiCompatible.ts` (Chat Completions; OpenAI
+  default `gpt-6-luna`, OpenRouter default `anthropic/claude-opus-5.5`) stream
+  with the global `fetch` (no new dependency); `http.ts` holds the shared SSE
+  reader and messages. `fetch` is injectable for tests.
+- Errors never carry text from the service or from a thrown error (OpenAI
+  quotes part of a rejected key): an HTTP error is reported by status only, a
+  mid-stream error by its type name only.
+- A backend with no key is listed as unavailable ("No API key saved. Add one in
+  Settings."). `ChatPanel` re-checks availability when its window gets focus
+  (approved edit outside Owns).
+- Settings: the sidebar's gear opens a `settings` page (`NavTab` gained
+  `settings`) with `src/components/settings/ApiKeySettings.tsx`, which clears
+  the field as soon as Save is pressed.
+- `tests/secrets.noLeak.test.ts` runs the real `ReplyRunner`, `StreamHub`,
+  `AppStateStore` and `KeyStore` against a fake server that echoes the key in a
+  401, a mid-stream error and a thrown error, for all three backends, and
+  checks that the key (and its first 12 characters) appears in no snapshot,
+  stream delta, IPC result, or the file at rest.
+- App check (2026-11-16, both windows): a key saved in Settings was still
+  set after a restart, and the Anthropic API accepted it (HTTP 400 for an
+  account without credit, shown with the out-of-credit hint). A live streamed
+  reply from an API-key provider was not observed for lack of credit; the user
+  accepted the phase as done without it.
 
 ---
 
