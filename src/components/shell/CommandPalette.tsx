@@ -1,6 +1,13 @@
 import { Check, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { buildCommands, cycleIndex, filterCommands, type Command } from '../../config/commands';
+import {
+  COMMAND_REGISTRY,
+  commandsForWindow,
+  cycleIndex,
+  filterCommands,
+  type CommandHelpers,
+  type CommandItem,
+} from '../../config/commands';
 import { getBridge } from '../../lib/bridge';
 import { canShowWindows, showWindow, WINDOW_KIND } from '../../lib/windowKind';
 import { useAppStore } from '../../store/useAppStore';
@@ -19,7 +26,7 @@ async function selectFolder(): Promise<void> {
   }
 }
 
-function optionId(command: Command): string {
+function optionId(command: CommandItem): string {
   return `command-palette-${command.id.replace(/\W/g, '-')}`;
 }
 
@@ -35,44 +42,28 @@ function CommandPaletteDialog() {
   const toggleArtifactsPanel = useAppStore((state) => state.toggleArtifactsPanel);
   const setSelectedBackend = useAppStore((state) => state.setSelectedBackend);
   const selectedBackend = useAppStore((state) => state.selectedBackend);
-  const isSidebarCollapsed = useAppStore((state) => state.isSidebarCollapsed);
-  const isArtifactsPanelOpen = useAppStore((state) => state.isArtifactsPanelOpen);
 
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const commands = useMemo(
-    () =>
-      buildCommands(
-        {
-          showWindow,
-          selectFolder,
-          setActiveNavTab,
-          createThread: () => createThread(),
-          toggleSidebar,
-          toggleArtifactsPanel,
-          setSelectedBackend,
-        },
-        {
-          windowKind: WINDOW_KIND,
-          isDesktop: canShowWindows(),
-          selectedBackend,
-          isSidebarCollapsed,
-          isArtifactsPanelOpen,
-        },
-      ),
-    [
-      setActiveNavTab,
-      createThread,
+  const helpers = useMemo<CommandHelpers>(
+    () => ({
+      windowKind: WINDOW_KIND,
+      showWindow,
+      selectFolder,
+      createThread: (sectionId) => createThread(sectionId),
       toggleSidebar,
       toggleArtifactsPanel,
+      setActiveNavTab,
       setSelectedBackend,
-      selectedBackend,
-      isSidebarCollapsed,
-      isArtifactsPanelOpen,
-    ],
+      closePalette: () => close(false),
+    }),
+    [close, createThread, toggleSidebar, toggleArtifactsPanel, setActiveNavTab, setSelectedBackend],
   );
+  // The window kind never changes while the page lives, and the bridge is
+  // there from the start, so this list is fixed for the window.
+  const commands = useMemo(() => commandsForWindow(COMMAND_REGISTRY, WINDOW_KIND, canShowWindows()), []);
   const results = useMemo(() => filterCommands(commands, query), [commands, query]);
   const highlighted = results[Math.min(activeIndex, results.length - 1)];
 
@@ -89,12 +80,13 @@ function CommandPaletteDialog() {
     }
   }, [highlighted]);
 
-  const run = (command: Command | undefined): void => {
+  const run = (command: CommandItem | undefined): void => {
     if (command === undefined) {
       return;
     }
-    close(false);
-    Promise.resolve(command.run()).catch((error: unknown) => {
+    // Each action closes the palette itself (spec), so a command can choose to
+    // close before or after its work, as Open Project Folder does.
+    Promise.resolve(command.action(helpers)).catch((error: unknown) => {
       console.error(`The "${command.title}" command failed:`, error);
     });
   };
@@ -185,9 +177,9 @@ function CommandPaletteDialog() {
                     isActive ? 'bg-hover text-fg' : 'text-muted'
                   }`}
                 >
-                  <span className="w-16 shrink-0 text-xs text-subtle">{command.group}</span>
+                  <span className="w-20 shrink-0 text-xs text-subtle">{command.category}</span>
                   <span className="min-w-0 flex-1 truncate">{command.title}</span>
-                  {command.isCurrent === true && (
+                  {command.backend !== undefined && command.backend === selectedBackend && (
                     <Check className="size-4 shrink-0 text-accent" aria-label="Current" />
                   )}
                   {command.shortcut !== undefined && (
