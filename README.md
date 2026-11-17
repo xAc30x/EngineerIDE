@@ -14,6 +14,10 @@ side or on separate monitors:
 - The header button (`IDE` in the Workspace window, `Agent Window` in the IDE
   window) or `Ctrl+E` (`Cmd+E` on macOS) opens the other window, or brings it to
   the front if it is already open. The current window stays open.
+- `Ctrl+Shift+P` (`Cmd+Shift+P` on macOS) opens a command palette in either
+  window: type to search, arrow keys to move, `Enter` to run, `Escape` to close.
+  It switches pages, starts a chat, toggles the sidebar and artifacts panel,
+  opens the other window, picks the AI model, and opens a project folder.
 - Both windows show the same conversation, project folder, and AI backend. That
   state lives in the Electron main process and is sent to both windows on every
   change. The unsent chat draft and the panel toggles belong to each window.

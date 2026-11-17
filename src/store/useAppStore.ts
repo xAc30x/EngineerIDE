@@ -23,6 +23,8 @@ export interface WindowLocalState {
   composerDraft: string;
   isSidebarCollapsed: boolean;
   isArtifactsPanelOpen: boolean;
+  /** Whether this window shows its command palette (Ctrl/Cmd+Shift+P). */
+  isCommandPaletteOpen: boolean;
 }
 
 /**
@@ -61,6 +63,9 @@ export interface AppActions {
   setComposerDraft: (draft: string) => void;
   toggleSidebar: () => void;
   toggleArtifactsPanel: () => void;
+  /** Opens or closes this window's command palette. Never reaches main. */
+  setCommandPaletteOpen: (isOpen: boolean) => void;
+  toggleCommandPalette: () => void;
 }
 
 export type AppStore = AppStateData & AppActions;
@@ -72,6 +77,7 @@ export function createInitialState(shared: SharedState = createInitialSharedStat
     composerDraft: '',
     isSidebarCollapsed: false,
     isArtifactsPanelOpen: false,
+    isCommandPaletteOpen: false,
   };
 }
 
@@ -155,6 +161,9 @@ export function createAppStore(bridge?: WindowBridge) {
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
       toggleArtifactsPanel: () =>
         set((state) => ({ isArtifactsPanelOpen: !state.isArtifactsPanelOpen })),
+      setCommandPaletteOpen: (isOpen) => set({ isCommandPaletteOpen: isOpen }),
+      toggleCommandPalette: () =>
+        set((state) => ({ isCommandPaletteOpen: !state.isCommandPaletteOpen })),
     };
   });
 

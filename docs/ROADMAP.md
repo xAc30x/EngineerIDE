@@ -62,6 +62,7 @@ request. A red CI run means the phase is not done.
 | 3a | SQLite driver decision | Done |
 | 3b | Storage layer | `[x]` Done |
 | 3c | Load on demand | `[x]` Done |
+| – | Command palette | `[/]` In progress |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
 | 6a–6c | Artifacts | Not started |
@@ -521,6 +522,23 @@ its new place.
 - Left for later: moving a chat into a section from the UI (drag or a "Move
   to…" menu; the `moveThread` action exists), unloading chats from memory,
   retrying a failed write.
+
+### Command palette
+
+Status: `[/]` In progress (2026-11-17). Its own pull request, outside the
+numbered phases.
+
+**Goal.** `Ctrl+Shift+P` (`⌘⇧P` on macOS) opens a searchable list of commands
+in the window it was pressed in: pages, new chat, sidebar and panel toggles,
+the other window, the AI model, and opening a project folder. Arrow keys move,
+Enter runs, Escape closes.
+
+**Owns.** `src/config/commands.ts`, `src/components/shell/CommandPalette.tsx`,
+the window-local `isCommandPaletteOpen` in `src/store/useAppStore.ts`, the
+shortcut in `src/App.tsx`, `src/lib/platform.ts` (shortcut labels work
+without a `window`, for tests), `tests/commands.test.ts`, and the window-local
+tests in `tests/useAppStore.test.ts`. No IPC or shared-state changes: the
+palette only calls existing store actions and bridge helpers.
 
 ## Milestone 4 – Files and editor
 

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { IdeView } from './components/ide/IdeView';
+import { CommandPalette } from './components/shell/CommandPalette';
 import { Header } from './components/shell/Header';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { WorkspaceView } from './components/workspace/WorkspaceView';
@@ -7,17 +8,25 @@ import { otherWindowKind, showWindow, WINDOW_KIND } from './lib/windowKind';
 import { useAppStore } from './store/useAppStore';
 
 /**
- * Registers the window-wide shortcuts: Ctrl/Cmd+E opens or focuses the other
- * window, and Ctrl/Cmd+B toggles the sidebar of the Workspace window.
+ * Registers the window-wide shortcuts: Ctrl/Cmd+Shift+P opens or closes this
+ * window's command palette, Ctrl/Cmd+E opens or focuses the other window, and
+ * Ctrl/Cmd+B toggles the sidebar of the Workspace window.
  */
 function useGlobalShortcuts(): void {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const hasModifier = event.ctrlKey || event.metaKey;
-      if (!hasModifier || event.altKey || event.shiftKey) {
+      if (!hasModifier || event.altKey) {
         return;
       }
       const key = event.key.toLowerCase();
+      if (event.shiftKey) {
+        if (key === 'p' && !event.repeat) {
+          event.preventDefault();
+          useAppStore.getState().toggleCommandPalette();
+        }
+        return;
+      }
       if (key === 'e') {
         event.preventDefault();
         showWindow(otherWindowKind(WINDOW_KIND));
@@ -66,5 +75,10 @@ function IdeWindow() {
  */
 export default function App() {
   useGlobalShortcuts();
-  return WINDOW_KIND === 'ide' ? <IdeWindow /> : <WorkspaceWindow />;
+  return (
+    <>
+      {WINDOW_KIND === 'ide' ? <IdeWindow /> : <WorkspaceWindow />}
+      <CommandPalette />
+    </>
+  );
 }

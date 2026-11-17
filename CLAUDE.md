@@ -48,6 +48,7 @@ time and follow its rules ("How to work a phase").
 - `src/` – renderer (React). Browser APIs only. Both windows load the same bundle.
   - `store/useAppStore.ts` – one Zustand store per window: a mirror of the shared state plus that window's own UI state.
   - `lib/windowKind.ts` – which window this is, and how to open the other one.
+  - `config/commands.ts` – the command palette's commands (pure: built from helpers passed in, filtered per window); `components/shell/CommandPalette.tsx` shows them.
   - `hooks/useThreadMessages.ts` – fetches the messages of the thread a window shows, again when its `messageCount` changes; keeps the old list on screen during a refetch.
   - `hooks/useStream.ts` – follows one stream by id: the text so far, then live chunks, plus its status and `cancel()`.
   - `components/` – `shell/`, `sidebar/`, `workspace/`, `ide/`, `shared/`, `settings/` (API key form).
@@ -67,7 +68,7 @@ time and follow its rules ("How to work a phase").
 | Kind of state | Owner | Examples |
 | --- | --- | --- |
 | Shared | Main process, `electron/appStateStore.ts` | sections, threads, messages, each thread's running reply, active thread, active project, selected backend. Windows receive a thread index (`toIndexState()`: `messageCount`, no message text) and fetch messages with `getThreadMessages()`. |
-| Window-local | That window's Zustand store or React state | chat draft, open sidebar page, sidebar and panel toggles, expanded folders |
+| Window-local | That window's Zustand store or React state | chat draft, open sidebar page, sidebar and panel toggles, command palette open, expanded folders |
 | Long-running output | Main process, `electron/streams/streamHub.ts`, by stream id | AI replies, terminal output |
 | Saved to disk | Storage worker, `electron/storage/`, written only by `writer.ts` | threads, messages, sections, active thread, active project, selected backend, window sizes (never a running reply) |
 
