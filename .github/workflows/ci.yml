@@ -32,6 +32,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron downloads its binary on first use, not during npm ci. Fetch it
+      # here so the download does not run inside a test's time limit.
+      - name: Download Electron binary
+        run: npx --no install-electron
+
       - name: Type check
         run: npx tsc --noEmit
 
