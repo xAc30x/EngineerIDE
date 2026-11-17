@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AppStateStore } from '../electron/appStateStore';
-import type { StateSnapshot } from '../shared/ipc/state';
+import type { FullStateSnapshot } from '../shared/ipc/state';
 
 describe('AppStateStore', () => {
   it('starts at version 0', () => {
@@ -9,7 +9,7 @@ describe('AppStateStore', () => {
 
   it('raises the version and notifies subscribers on each change', () => {
     const store = new AppStateStore();
-    const received: StateSnapshot[] = [];
+    const received: FullStateSnapshot[] = [];
     store.subscribe((snapshot) => received.push(snapshot));
 
     store.dispatch({ type: 'addSection', title: 'Research' });

@@ -1,7 +1,24 @@
-import { app, BrowserWindow, dialog, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, screen, type WebContents } from 'electron';
 import type { WindowKind } from '../shared/types';
+import { parseWindowBounds, placeWindow, serializeWindowBounds } from './windowBounds';
 
 const WINDOW_BACKGROUND_COLOR = '#1c1c1f';
+
+// A resize or move is saved once it has settled for this long.
+const SAVE_BOUNDS_DELAY_MS = 500;
+
+/** Called with a window's size (and position where known) to save, as JSON. */
+export type BoundsListener = (kind: WindowKind, bounds: string) => void;
+
+/**
+ * Under Wayland an app cannot know its own window position (see
+ * `electron/windowBounds.ts`), so only the size is saved there.
+ */
+function canKnowWindowPosition(): boolean {
+  if (process.platform !== 'linux') return true;
+  if (app.commandLine.getSwitchValue('ozone-platform') === 'x11') return true;
+  return process.env.XDG_SESSION_TYPE !== 'wayland' && process.env.WAYLAND_DISPLAY === undefined;
+}
 
 interface WindowLayout {
   width: number;
@@ -31,6 +48,17 @@ export interface WindowRegistryOptions {
 export class WindowRegistry {
   private readonly windows = new Map<WindowKind, BrowserWindow>();
   private isQuitting = false;
+  private savedBounds: Partial<Record<WindowKind, string>> = {};
+  private boundsListener: BoundsListener | null = null;
+
+  /**
+   * Opens windows at their saved size from now on, and reports each later
+   * change to `listener` (Phase 3c). Called by storage before any window opens.
+   */
+  rememberBounds(saved: Partial<Record<WindowKind, string>>, listener: BoundsListener): void {
+    this.savedBounds = saved;
+    this.boundsListener = listener;
+  }
 
   constructor(private readonly options: WindowRegistryOptions) {
     app.on('before-quit', () => {
@@ -70,8 +98,18 @@ export class WindowRegistry {
   }
 
   private create(kind: WindowKind): BrowserWindow {
+    const placement = placeWindow(
+      WINDOW_LAYOUTS[kind],
+      parseWindowBounds(this.savedBounds[kind]),
+      screen.getAllDisplays().map((display) => display.workArea),
+    );
     const window = new BrowserWindow({
       ...WINDOW_LAYOUTS[kind],
+      width: placement.width,
+      height: placement.height,
+      ...(placement.x === undefined || placement.y === undefined
+        ? {}
+        : { x: placement.x, y: placement.y }),
       backgroundColor: WINDOW_BACKGROUND_COLOR,
       show: false,
       autoHideMenuBar: true,
@@ -83,7 +121,13 @@ export class WindowRegistry {
       },
     });
 
-    window.once('ready-to-show', () => window.show());
+    window.once('ready-to-show', () => {
+      if (placement.isMaximized) {
+        window.maximize();
+      }
+      window.show();
+    });
+    this.trackBounds(kind, window);
 
     // Windows are opened only by this registry, and a window never leaves its own page.
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -109,6 +153,29 @@ export class WindowRegistry {
     });
 
     return window;
+  }
+
+  /** Saves the window's size after it settles, and once more as it closes. */
+  private trackBounds(kind: WindowKind, window: BrowserWindow): void {
+    const canKnowPosition = canKnowWindowPosition();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const save = () => {
+      clearTimeout(timer);
+      if (window.isDestroyed() || window.isMinimized() || this.boundsListener === null) return;
+      this.boundsListener(
+        kind,
+        serializeWindowBounds(window.getNormalBounds(), window.isMaximized(), canKnowPosition),
+      );
+    };
+    const saveSoon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(save, SAVE_BOUNDS_DELAY_MS);
+    };
+    window.on('resize', saveSoon);
+    window.on('move', saveSoon);
+    window.on('maximize', saveSoon);
+    window.on('unmaximize', saveSoon);
+    window.on('close', save);
   }
 
   /**

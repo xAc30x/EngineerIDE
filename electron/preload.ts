@@ -5,6 +5,7 @@ import { fsApi } from './preload/fs';
 import { secretsApi } from './preload/secrets';
 import { stateApi } from './preload/state';
 import { streamsApi } from './preload/streams';
+import { threadsApi } from './preload/threads';
 import { windowsApi } from './preload/windows';
 
 /**
@@ -19,6 +20,7 @@ const electronAPI: ElectronAPI = {
   ...secretsApi,
   ...stateApi,
   ...streamsApi,
+  ...threadsApi,
   ...windowsApi,
 };
 

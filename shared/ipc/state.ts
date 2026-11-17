@@ -1,4 +1,4 @@
-import type { RendererAction, SharedState } from '../appState';
+import { toIndexState, type IndexState, type RendererAction, type SharedState } from '../appState';
 import type { IpcResult } from '../types';
 
 export const STATE_CHANNELS = {
@@ -8,10 +8,25 @@ export const STATE_CHANNELS = {
   changed: 'state:changed',
 } as const;
 
-/** The shared state at one point in time. `version` grows by one with every change. */
+/**
+ * The shared state at one point in time, as windows receive it: a thread
+ * index without message text (Phase 3c). `version` grows by one with every
+ * change.
+ */
 export interface StateSnapshot {
   version: number;
+  state: IndexState;
+}
+
+/** Main's own snapshot, with every thread's messages. Never sent to a window. */
+export interface FullStateSnapshot {
+  version: number;
   state: SharedState;
+}
+
+/** What a window receives for main's snapshot: the same version, no messages. */
+export function toStateSnapshot(snapshot: FullStateSnapshot): StateSnapshot {
+  return { version: snapshot.version, state: toIndexState(snapshot.state) };
 }
 
 export interface StateApi {

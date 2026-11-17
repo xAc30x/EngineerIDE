@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type Key
 import { BACKEND_OPTIONS, isBackendProvider } from '../../../shared/backends';
 import { useProjectFolder } from '../../hooks/useProjectFolder';
 import { useStream } from '../../hooks/useStream';
+import { useThreadMessages } from '../../hooks/useThreadMessages';
 import { getBridge } from '../../lib/bridge';
 import { selectActiveThread, useAppStore } from '../../store/useAppStore';
 import type { Message, ProviderAvailability, RunningReply } from '../../types';
@@ -149,8 +150,27 @@ export function ChatPanel({ variant }: ChatPanelProps) {
   // A ref, not state: a second Enter can arrive before React re-renders.
   const isSendingRef = useRef(false);
 
-  const messages = thread?.messages ?? [];
+  const { messages, isUpToDate } = useThreadMessages(thread);
   const runningReply = thread?.runningReply ?? null;
+  const hasMessages = (thread?.messageCount ?? 0) > 0;
+
+  // When a reply ends, its stored message arrives one fetch later. Until it
+  // does, the finished stream stays on screen so the reply never blinks out.
+  const [lastReply, setLastReply] = useState<{ threadId: string; reply: RunningReply } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (thread !== undefined && runningReply !== null) {
+      setLastReply({ threadId: thread.id, reply: runningReply });
+    } else if (isUpToDate) {
+      setLastReply(null);
+    }
+  }, [thread, runningReply, isUpToDate]);
+  const shownReply =
+    runningReply ??
+    (!isUpToDate && lastReply !== null && lastReply.threadId === thread?.id
+      ? lastReply.reply
+      : null);
   // Not blocked while replying: main owns the run lock and says why it refuses.
   const canSend = draft.trim() !== '';
 
@@ -215,13 +235,13 @@ export function ChatPanel({ variant }: ChatPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {messages.length === 0 ? (
+      {!hasMessages ? (
         <div className={`flex min-h-0 flex-1 flex-col items-center justify-center ${layout.column}`}>
           <p className={`text-center font-medium text-fg ${layout.greeting}`}>
             What would you like to work on?
           </p>
           <p className="mt-2 text-center text-sm text-subtle">
-            Messages are kept in memory until the app closes.
+            Chats are saved on this computer.
           </p>
         </div>
       ) : (
@@ -233,8 +253,8 @@ export function ChatPanel({ variant }: ChatPanelProps) {
             {messages.map((message) => (
               <MessageItem key={message.id} message={message} />
             ))}
-            {thread !== undefined && runningReply !== null && (
-              <StreamingReply key={runningReply.streamId} threadId={thread.id} reply={runningReply} />
+            {thread !== undefined && shownReply !== null && (
+              <StreamingReply key={shownReply.streamId} threadId={thread.id} reply={shownReply} />
             )}
           </div>
         </div>

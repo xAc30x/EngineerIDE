@@ -1,31 +1,50 @@
 import { describe, expect, it } from 'vitest';
 import { AppStateStore } from '../electron/appStateStore';
-import { createInitialSharedState } from '../shared/appState';
-import type { StateApi, StateSnapshot } from '../shared/ipc/state';
-import { createAppStore, findThread, selectActiveThread } from '../src/store/useAppStore';
+import { readThreadMessages } from '../electron/threadMessages';
+import { createInitialSharedState, toIndexState } from '../shared/appState';
+import { toStateSnapshot, type StateSnapshot } from '../shared/ipc/state';
+import {
+  createAppStore,
+  findThread,
+  selectActiveThread,
+  type WindowBridge,
+} from '../src/store/useAppStore';
 
 /** Lets pending promise callbacks (for example the first state fetch) run. */
 async function flush(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** The bridge one window would get from the preload script, wired to `main` directly. */
-function connectWindow(main: AppStateStore): StateApi {
+/**
+ * The bridge one window would get from the preload script, wired to `main`
+ * directly. Like the real IPC handlers, it sends the thread index and answers
+ * message fetches from main's full state (Phase 3c).
+ */
+function connectWindow(main: AppStateStore): WindowBridge {
   return {
-    getAppState: async () => ({ ok: true, value: main.getSnapshot() }),
+    getAppState: async () => ({ ok: true, value: toStateSnapshot(main.getSnapshot()) }),
     dispatch: async (action) => {
       main.dispatch(action);
       return { ok: true, value: null };
     },
-    onStateChanged: (listener) => main.subscribe(listener),
+    onStateChanged: (listener) => main.subscribe((snapshot) => listener(toStateSnapshot(snapshot))),
+    getThreadMessages: async (threadId) => readThreadMessages(main.getSnapshot().state, threadId),
   };
 }
 
+/** The message texts a window gets when it fetches its active thread. */
+async function activeContents(store: ReturnType<typeof createAppStore>): Promise<string[]> {
+  const id = store.getState().activeThreadId;
+  if (id === null) return [];
+  const result = await store.getState().loadThreadMessages(id);
+  return result.ok ? result.value.map((message) => message.content) : [];
+}
+
 /** A bridge whose broadcasts are held back until `deliver()` is called. */
-function connectSlowWindow(main: AppStateStore): { bridge: StateApi; deliver: () => void } {
+function connectSlowWindow(main: AppStateStore): { bridge: WindowBridge; deliver: () => void } {
   const pending: StateSnapshot[] = [];
   let listener: ((snapshot: StateSnapshot) => void) | undefined;
-  main.subscribe((snapshot) => pending.push(snapshot));
+  main.subscribe((snapshot) => pending.push(toStateSnapshot(snapshot)));
   return {
     bridge: {
       ...connectWindow(main),
@@ -91,11 +110,12 @@ describe('window-local state', () => {
 });
 
 describe('without a bridge', () => {
-  it('applies actions locally', () => {
+  it('applies actions locally, and serves the messages itself', async () => {
     const store = createAppStore();
     store.getState().sendMessage('Hello');
     store.getState().setSelectedBackend('openrouter');
-    expect(selectActiveThread(store.getState())?.messages[0]?.content).toBe('Hello');
+    expect(selectActiveThread(store.getState())?.messageCount).toBe(1);
+    expect(await activeContents(store)).toEqual(['Hello']);
     expect(store.getState().selectedBackend).toBe('openrouter');
   });
 });
@@ -110,9 +130,7 @@ describe('two windows on one main process', () => {
     await flush();
 
     expect(ide.getState().activeThreadId).toBe(activeThreadId(workspace));
-    expect(selectActiveThread(ide.getState())?.messages[0]?.content).toBe(
-      'Written before the IDE window opened',
-    );
+    expect(await activeContents(ide)).toEqual(['Written before the IDE window opened']);
   });
 
   it('shows a message sent in either window in the other', async () => {
@@ -124,12 +142,29 @@ describe('two windows on one main process', () => {
     workspace.getState().sendMessage('From the Workspace window');
     ide.getState().sendMessage('From the IDE window');
 
-    const contents = (store: typeof workspace) =>
-      (selectActiveThread(store.getState())?.messages ?? [])
-        .filter((message) => message.role === 'user')
-        .map((message) => message.content);
-    expect(contents(workspace)).toEqual(['From the Workspace window', 'From the IDE window']);
-    expect(contents(ide)).toEqual(contents(workspace));
+    expect(await activeContents(workspace)).toEqual([
+      'From the Workspace window',
+      'From the IDE window',
+    ]);
+    expect(await activeContents(ide)).toEqual(await activeContents(workspace));
+    expect(selectActiveThread(ide.getState())?.messageCount).toBe(2);
+  });
+
+  it('never receives a message body in a snapshot (Phase 3c)', async () => {
+    const main = new AppStateStore();
+    const received: StateSnapshot[] = [];
+    const bridge = connectWindow(main);
+    bridge.onStateChanged((snapshot) => received.push(snapshot));
+    const workspace = createAppStore(bridge);
+    await flush();
+
+    workspace.getState().sendMessage('Title line');
+    workspace.getState().sendMessage('a private second message');
+
+    // The title comes from the first message, so look for the second one.
+    expect(JSON.stringify(received)).not.toContain('a private second message');
+    expect(JSON.stringify(workspace.getState())).not.toContain('a private second message');
+    expect(await activeContents(workspace)).toEqual(['Title line', 'a private second message']);
   });
 
   it('keeps the same active thread in both windows', async () => {
@@ -215,7 +250,8 @@ describe('two windows on one main process', () => {
 describe('snapshot ordering', () => {
   function connectManually(firstFetch: StateSnapshot) {
     let listener: ((snapshot: StateSnapshot) => void) | undefined;
-    const bridge: StateApi = {
+    const bridge: WindowBridge = {
+      getThreadMessages: async () => ({ ok: true, value: [] }),
       getAppState: async () => ({ ok: true, value: firstFetch }),
       dispatch: async () => ({ ok: true, value: null }),
       onStateChanged: (next) => {
@@ -232,7 +268,7 @@ describe('snapshot ordering', () => {
   function snapshot(version: number, projectName: string): StateSnapshot {
     return {
       version,
-      state: { ...createInitialSharedState(), activeProjectName: projectName },
+      state: { ...toIndexState(createInitialSharedState()), activeProjectName: projectName },
     };
   }
 

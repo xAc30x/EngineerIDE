@@ -4,8 +4,10 @@ import type {
   Message,
   MessageRole,
   Section,
+  SectionSummary,
   SelectedFolder,
   Thread,
+  ThreadSummary,
 } from './types';
 import type { StreamStatus } from './ipc/streams';
 
@@ -73,7 +75,12 @@ export type SharedAction =
       threadId: string;
       streamId: string;
       outcome: ReplyOutcome;
-    };
+    }
+  /**
+   * Puts the messages of a restored thread, read from the database, in place
+   * (Phase 3c). Only main dispatches it; `parseAction()` rejects it.
+   */
+  | { type: 'loadThreadMessages'; threadId: string; messages: Message[] };
 
 /** How a reply ended, with everything it produced. */
 export interface ReplyOutcome {
@@ -103,6 +110,8 @@ function createEmptyThread(): Thread {
     createdAt: now,
     updatedAt: now,
     runningReply: null,
+    messageCount: 0,
+    messagesLoaded: true,
   };
 }
 
@@ -120,7 +129,36 @@ function deriveThreadTitle(firstMessage: string): string {
     : firstLine;
 }
 
-export function findThread(state: ThreadContainers, threadId: string): Thread | undefined {
+/**
+ * The shared state as windows receive it (Phase 3c): a thread index with no
+ * message text. Main keeps the full `SharedState`.
+ */
+export interface IndexState extends Omit<SharedState, 'sections' | 'recents'> {
+  sections: SectionSummary[];
+  recents: ThreadSummary[];
+}
+
+function summarizeThread({ messages: _messages, messagesLoaded: _loaded, ...thread }: Thread): ThreadSummary {
+  return thread;
+}
+
+/** Strips the messages from every thread, leaving their count. */
+export function toIndexState(state: SharedState): IndexState {
+  return {
+    ...state,
+    sections: state.sections.map((section) => ({
+      ...section,
+      items: section.items.map(summarizeThread),
+    })),
+    recents: state.recents.map(summarizeThread),
+  };
+}
+
+/** Finds a thread by id in full or index state. */
+export function findThread<T extends { id: string }>(
+  state: { sections: readonly { items: readonly T[] }[]; recents: readonly T[] },
+  threadId: string,
+): T | undefined {
   for (const section of state.sections) {
     const match = section.items.find((thread) => thread.id === threadId);
     if (match) {
@@ -172,7 +210,7 @@ function createThread(state: SharedState, sectionId: string | undefined): Shared
 
   if (targetSection === undefined) {
     const latest = state.recents[0];
-    if (latest !== undefined && latest.messages.length === 0) {
+    if (latest !== undefined && latest.messageCount === 0) {
       return state.activeThreadId === latest.id ? state : { ...state, activeThreadId: latest.id };
     }
     const thread = createEmptyThread();
@@ -206,14 +244,19 @@ function sendMessage(state: SharedState, threadId: string | null, content: strin
   if (targetId === null) {
     return state;
   }
+  // Main loads a restored thread's messages before anything is added to it.
+  if (findThread(base, targetId)?.messagesLoaded === false) {
+    return state;
+  }
 
   // The reply is started by the main process (electron/ai/replies.ts), not here.
   return {
     ...base,
     ...updateThread(base, targetId, (thread) => ({
       ...thread,
-      title: thread.messages.length === 0 ? deriveThreadTitle(text) : thread.title,
+      title: thread.messageCount === 0 ? deriveThreadTitle(text) : thread.title,
       messages: [...thread.messages, createMessage('user', text)],
+      messageCount: thread.messageCount + 1,
       updatedAt: Date.now(),
     })),
   };
@@ -272,7 +315,28 @@ function finishReply(
       ...current,
       runningReply: null,
       messages: added.length === 0 ? current.messages : [...current.messages, ...added],
+      messageCount: current.messageCount + added.length,
       updatedAt: Date.now(),
+    })),
+  };
+}
+
+/**
+ * Puts a restored thread's messages, read from the database, in place.
+ * Ignored for a thread that is already loaded or does not exist.
+ */
+function loadThreadMessages(state: SharedState, threadId: string, messages: Message[]): SharedState {
+  const thread = findThread(state, threadId);
+  if (thread === undefined || thread.messagesLoaded) {
+    return state;
+  }
+  return {
+    ...state,
+    ...updateThread(state, threadId, (current) => ({
+      ...current,
+      messages,
+      messageCount: messages.length,
+      messagesLoaded: true,
     })),
   };
 }
@@ -367,6 +431,8 @@ export function applyAction(state: SharedState, action: SharedAction): SharedSta
       return startReply(state, action.threadId, action.streamId, action.provider);
     case 'finishReply':
       return finishReply(state, action.threadId, action.streamId, action.outcome);
+    case 'loadThreadMessages':
+      return loadThreadMessages(state, action.threadId, action.messages);
     case 'setActiveProject':
       return {
         ...state,

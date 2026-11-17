@@ -4,9 +4,9 @@ import {
   type SharedAction,
   type SharedState,
 } from '../shared/appState';
-import type { StateSnapshot } from '../shared/ipc/state';
+import type { FullStateSnapshot } from '../shared/ipc/state';
 
-type SnapshotListener = (snapshot: StateSnapshot) => void;
+type SnapshotListener = (snapshot: FullStateSnapshot) => void;
 
 /**
  * Owns the state that every window shares. Windows send actions; each change
@@ -18,7 +18,7 @@ export class AppStateStore {
   private version = 0;
   private readonly listeners = new Set<SnapshotListener>();
 
-  getSnapshot(): StateSnapshot {
+  getSnapshot(): FullStateSnapshot {
     return { version: this.version, state: this.state };
   }
 
@@ -29,6 +29,19 @@ export class AppStateStore {
       return;
     }
     this.state = next;
+    this.version += 1;
+    const snapshot = this.getSnapshot();
+    for (const listener of this.listeners) {
+      listener(snapshot);
+    }
+  }
+
+  /**
+   * Replaces the whole state with one restored from storage (Phase 3c). Main
+   * calls it once at launch, before any window opens; windows never can.
+   */
+  restore(state: SharedState): void {
+    this.state = state;
     this.version += 1;
     const snapshot = this.getSnapshot();
     for (const listener of this.listeners) {

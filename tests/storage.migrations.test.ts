@@ -46,7 +46,7 @@ describe('runMigrations', () => {
     expect(runMigrations(database)).toBe(LATEST_SCHEMA_VERSION);
 
     expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION);
-    expect(tableNames(database)).toEqual(['messages', 'threads']);
+    expect(tableNames(database)).toEqual(['messages', 'sections', 'settings', 'threads']);
   });
 
   it('changes nothing when run a second time', () => {
@@ -101,6 +101,28 @@ describe('runMigrations', () => {
     expect(() => runMigrations(database)).toThrow(MIGRATION_ERRORS.newerDatabase);
     expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION + 1);
     expect(tableNames(database)).toEqual(['future']);
+  });
+
+  it('upgrades a version-1 database that has rows, keeping all of them (Phase 3c)', () => {
+    const database = openEmpty();
+    runMigrations(database, MIGRATIONS.slice(0, 1));
+    database
+      .prepare('INSERT INTO threads (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run('t1', 'Hello', 1, 2);
+    database
+      .prepare(
+        'INSERT INTO messages (id, thread_id, position, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run('m1', 't1', 0, 'user', 'hi', 3);
+
+    expect(runMigrations(database)).toBe(2);
+
+    expect(database.prepare('SELECT id, title, section_id, position FROM threads').all()).toEqual([
+      { id: 't1', title: 'Hello', section_id: null, position: 0 },
+    ]);
+    expect(database.prepare('SELECT id, content FROM messages').all()).toEqual([
+      { id: 'm1', content: 'hi' },
+    ]);
   });
 
   it('rejects a message whose role is unknown', () => {
