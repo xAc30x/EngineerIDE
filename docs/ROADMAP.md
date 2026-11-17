@@ -62,7 +62,7 @@ request. A red CI run means the phase is not done.
 | 3a | SQLite driver decision | Done |
 | 3b | Storage layer | `[x]` Done |
 | 3c | Load on demand | `[x]` Done |
-| – | Command palette | `[/]` In progress |
+| – | Command palette | `[x]` Done |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
 | 6a–6c | Artifacts | Not started |
@@ -527,7 +527,7 @@ its new place.
 
 ### Command palette
 
-Status: `[/]` In progress (2026-11-17). Its own pull request, outside the
+Status: `[x]` Done (2026-11-17, PR #13). Its own pull request, outside the
 numbered phases.
 
 **Goal.** `Ctrl+Shift+P` (`⌘⇧P` on macOS) opens a searchable list of commands
