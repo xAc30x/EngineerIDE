@@ -47,6 +47,10 @@ describe('SQLite driver (node:sqlite)', () => {
     }
   });
 
+  // The first use of the `electron` package downloads its binary, which can
+  // take longer than the default 5 s on a fresh install.
+  const ELECTRON_FIRST_RUN_TIMEOUT_MS = 60_000;
+
   it("is available in the installed Electron's own Node", () => {
     // In Node, the `electron` package exports the path to the Electron binary.
     const electronPath = createRequire(import.meta.url)('electron') as string;
@@ -56,5 +60,5 @@ describe('SQLite driver (node:sqlite)', () => {
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' },
     );
     expect(output).toBe('42');
-  });
+  }, ELECTRON_FIRST_RUN_TIMEOUT_MS);
 });
