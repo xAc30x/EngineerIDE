@@ -3,14 +3,15 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: two-window shell with streamed replies (roadmap Phases 0, 2a–2d, 3a–3c)
+## Status: two-window shell with streamed replies (roadmap Phases 0, 2a–2d, 3a–3c, 4a)
 
 The app runs as two windows that stay open together, so they can sit side by
 side or on separate monitors:
 
 - **Workspace window** – centered chat, a collapsible Artifacts/Design side panel,
   sidebar sections, and placeholder pages for Projects, Artifacts, Scheduled, and Design.
-- **IDE window** – file explorer, editor placeholder, and a docked agent chat.
+- **IDE window** – file explorer, a read-only view of the selected file (the
+  editor comes in Phase 4b), and a docked agent chat.
 - The header button (`IDE` in the Workspace window, `Agent Window` in the IDE
   window) or `Ctrl+E` (`Cmd+E` on macOS) opens the other window, or brings it to
   the front if it is already open. The current window stays open.

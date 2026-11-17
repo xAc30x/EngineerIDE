@@ -96,6 +96,26 @@ export interface SelectedFolder {
   name: string;
 }
 
+/** A text file read by `fs:readFile` (Phase 4a). */
+export interface FileContent {
+  /** The file's text, including a byte order mark if it has one. */
+  content: string;
+  /** Modification time when the file was read. A save of this text sends it back. */
+  mtimeMs: number;
+}
+
+/**
+ * What `fs:writeFile` did (Phase 4a). A refused save changes nothing on disk;
+ * it is a value, not an error, so a window can tell it apart from a failure.
+ */
+export type FileSaveResult =
+  /** Written. The next save of this file sends `mtimeMs`. */
+  | { status: 'saved'; mtimeMs: number }
+  /** Refused: the file changed on disk since it was read. `mtimeMs` is its time now. */
+  | { status: 'changedOnDisk'; mtimeMs: number }
+  /** Refused: the file no longer exists. A save never creates a file. */
+  | { status: 'missing' };
+
 /** Result of an IPC call. Handlers report failures as values instead of throwing. */
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string };
 

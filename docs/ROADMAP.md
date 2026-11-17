@@ -63,7 +63,8 @@ request. A red CI run means the phase is not done.
 | 3b | Storage layer | `[x]` Done |
 | 3c | Load on demand | `[x]` Done |
 | – | Command palette | `[x]` Done |
-| 4a–4c | Files and editor | Not started |
+| 4a | File read and write | `[x]` Done |
+| 4b–4c | Editor and file watching | Not started |
 | 5a–5b | Terminal | Not started |
 | 6a–6c | Artifacts | Not started |
 | 7 | Scheduled tasks | Not started |
@@ -553,6 +554,69 @@ palette only calls existing store actions and bridge helpers.
   those in a hidden IDE window.
 - **4c – File watching.** `electron/watch/`: one watcher per project root, in
   main. A hidden IDE window receives nothing and refreshes when shown.
+
+### Phase 4a – Read and write
+
+Status: `[x]` Done (2026-11-17). One pull request.
+
+**Goal.** Main can read a project file and save it back, safely. A save
+names the modification time the file had when it was read, and main refuses
+the save, changing nothing, if the file changed on disk since then.
+
+**Owns.** `electron/projectFiles.ts`, the `fs` domain (`shared/ipc/fs.ts`,
+`electron/ipc/fs.ts`, `electron/preload/fs.ts`), the file types in
+`shared/types.ts`, `tests/projectFiles*.test.ts`, and (approved by the user
+for the app check) a read-only text preview in
+`src/components/ide/IdeView.tsx`, which 4b replaces with the editor.
+
+**Rules.**
+- `fs:readFile` and `fs:writeFile` use the same check as `fs:readDir`: the
+  path is resolved, symbolic links included, and must end up inside an
+  approved project folder. A save writes to the resolved path.
+- Only existing files are read or saved; creating files is not part of 4a.
+- A read refuses folders, files over the size limit, and files that are not
+  UTF-8 text (a NUL byte or an invalid UTF-8 sequence), because saving them
+  back would damage them. A byte order mark and line endings are kept, so
+  saving unchanged text leaves the bytes the same.
+- Every payload is checked: a non-empty path, text content within the size
+  limit, and a finite modification time.
+- A successful save returns the file's new modification time, which the next
+  save of that file sends. A refused save is a result a window can tell apart
+  from a failure (for example, permission denied).
+
+**Done when.**
+- Reading returns the text and its modification time; a save with that time
+  writes the file and returns the new time; a second save with the new time
+  also works (tests).
+- A save after the file changed on disk, or after it was deleted, is refused
+  and the disk is unchanged (tests, changing the time with `utimes`).
+- A path outside the project, including through a symbolic link, is refused
+  for reading and saving (tests).
+- Folders, binary files and files over the limit are refused; a file with a
+  byte order mark and CRLF line endings round-trips byte for byte (tests).
+- App check, both windows open: selecting a file in the IDE window shows its
+  text; a save of that text with the read time works, and a save after the
+  file was changed in another program is refused.
+
+**As built.**
+- `electron/projectFiles.ts`: `readFile()` opens the file once and takes its
+  time before its bytes, so a change during the read makes the next save
+  refused. `writeFile()` opens with `r+` (no create, no truncate), checks the
+  time with the pure `checkSave()` on the same open file, then truncates and
+  writes in place and returns the new time. Any difference in time refuses,
+  an older one included. A missing path outside the project gets "Access
+  denied", not `missing`, so a save cannot reveal what exists outside it.
+- Limit: `MAX_TEXT_FILE_BYTES` (5 MB) for reads and saves.
+- `shared/types.ts`: `FileContent` and `FileSaveResult` (`saved`,
+  `changedOnDisk`, `missing`). `fs:readFile` and `fs:writeFile` join the
+  existing `fs` domain, so no registration lines changed.
+- `IdeView.tsx`: the editor area shows the selected file's text, read-only.
+- Tests: `tests/projectFiles.readWrite.test.ts` (19 tests; 382 in all).
+- App check (2026-11-17, both windows, `npm run build && npm start`): the
+  selected file's text showed in the IDE window; a save with the read time
+  returned `saved` and reached the disk; after the file was changed in
+  another editor, a save with the old time returned `changedOnDisk` and the
+  other editor's text stayed on disk.
 
 ## Milestone 5 – Terminal
 

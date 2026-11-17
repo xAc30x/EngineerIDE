@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog } from 'electron';
 import { FS_CHANNELS } from '../../shared/ipc/fs';
-import type { FileNode, SelectedFolder } from '../../shared/types';
+import type { FileContent, FileNode, FileSaveResult, SelectedFolder } from '../../shared/types';
 import type { AppStateStore } from '../appStateStore';
 import type { ProjectFileAccess } from '../projectFiles';
 import type { WindowRegistry } from '../windows';
@@ -37,5 +37,16 @@ export function registerFsIpc({ windows, projectFiles, appState }: FsIpcDependen
 
   handleFromAppWindow<FileNode[]>(FS_CHANNELS.readDir, windows, (_event, dirPath) =>
     projectFiles.readDir(dirPath),
+  );
+
+  handleFromAppWindow<FileContent>(FS_CHANNELS.readFile, windows, (_event, filePath) =>
+    projectFiles.readFile(filePath),
+  );
+
+  handleFromAppWindow<FileSaveResult>(
+    FS_CHANNELS.writeFile,
+    windows,
+    (_event, filePath, content, expectedMtimeMs) =>
+      projectFiles.writeFile(filePath, content, expectedMtimeMs),
   );
 }
