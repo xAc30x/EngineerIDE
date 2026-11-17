@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
 import { PINNED_SECTION_ID, useAppStore } from '../../store/useAppStore';
-import type { Section, Thread } from '../../types';
+import type { SectionSummary as Section, ThreadSummary as Thread } from '../../types';
 import { IconButton } from '../shared/IconButton';
 
 interface ThreadRowProps {

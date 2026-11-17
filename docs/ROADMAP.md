@@ -61,7 +61,7 @@ request. A red CI run means the phase is not done.
 | 2d | API-key providers | Done |
 | 3a | SQLite driver decision | Done |
 | 3b | Storage layer | `[x]` Done |
-| 3c | Load on demand | Not started |
+| 3c | Load on demand | `[x]` Done |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
 | 6a–6c | Artifacts | Not started |
@@ -344,7 +344,7 @@ Detailed when it is next. Module-level plan:
   writer, in main. No window opens the database. Detailed below.
 - **3c – Load on demand.** The state snapshot becomes a thread index (ids,
   titles, sections); messages load per thread. Restore the last project,
-  thread, and window positions on launch.
+  thread, and window positions on launch. Detailed below.
 
 ### Phase 3b – Storage layer
 
@@ -416,6 +416,111 @@ list; the user approved it for this phase).
   Personal sections get new random ids each launch, so they need fixed ids
   first); a reply still running at quit is not saved; a write that fails is
   not retried.
+
+### Phase 3c – Load on demand
+
+Status: `[x]` Done (2026-11-17). One pull request.
+
+**Goal.** The app opens where the user left it: threads, sections, the last
+thread and project, and window sizes come back. The shared state carries only
+a thread index; a window fetches a thread's messages when it shows it.
+
+**Owns.** `electron/storage/`, `shared/appState.ts`, `shared/types.ts`, a new
+`threads` IPC domain (`shared/ipc/threads.ts`, `electron/ipc/threads.ts`,
+`electron/preload/threads.ts`, plus their registration lines), the message
+display in `src/components/shared/ChatPanel.tsx` and `src/store/`,
+`electron/ai/replies.ts` (refuses a thread whose messages are not loaded),
+`electron/windows.ts` and `electron/windowBounds.ts` (window sizes), `electron/ipc/fs.ts` and
+`electron/projectFiles.ts` (re-approving the restored project),
+`electron/appStateStore.ts` (`restore()`, used once at launch), `electron/main.ts`,
+`electron/threadMessages.ts`, `electron/storage/threadLoader.ts`,
+`electron/ipc/ai.ts` (loads the thread before a reply; approved by the user), and
+(approved by the user for step 3)
+`shared/ipc/state.ts`, `electron/ipc/state.ts`, `src/hooks/useThreadMessages.ts`
+and the type import in `src/components/sidebar/SectionList.tsx`,
+and the tests for all of these. The user approved replacing tests that look
+for messages in the shared state, each with a test of the same behaviour in
+its new place.
+
+**Order.** Each step leaves a working app:
+1. Migration 2 (never edit migration 1): sections, each thread's section and
+   order, and a settings table. The writer also saves sections and moves, and
+   deletes a section when it is removed.
+2. Restore at launch, with messages still in the snapshot. Main loads before
+   any window opens, with a 2-second limit; if loading fails or times out the
+   app starts empty and does not write, so the file is never overwritten from
+   an empty state. Built-in sections are created only for a new database.
+3. Messages load per thread. At launch main reads threads with their
+   message counts but no message text; a restored thread is "not loaded"
+   until main first needs it (`ThreadLoader`: a window opens it, or something
+   is added to it). Windows receive a thread index (`toIndexState()`: each
+   thread's `messageCount`, no message text) and fetch the messages of the
+   thread they show over `threads:getMessages`. Nothing can be added to a
+   thread before its messages are loaded.
+4. Window sizes, and positions where the platform allows.
+
+**Rules.**
+- A restored project is approved again through `ProjectFileAccess` by main,
+  and only if it still exists as a folder. A restored thread never has a
+  running reply.
+- Every query still runs in the worker; requests from windows are validated.
+- On Linux under Wayland an app cannot read or set its window position, so
+  only the size is restored there.
+- A thread's messages are read through the same worker as the writes, so a
+  read always sees every write sent before it.
+
+**Done when.**
+- Migration 2 upgrades a version-1 database that already has rows, without
+  losing any (test).
+- After a restart, threads, sections (including a moved thread, a
+  collapsed section, and a removed section), the last thread and the last
+  project are back (tests and app check).
+- A failed or slow load starts the app empty and writes nothing (test).
+- No message text is in a state snapshot; opening a thread shows its
+  messages in both windows, and replies still stream and are saved (tests and
+  app check).
+- Window sizes come back after a restart (app check).
+
+**As built.**
+- Migration 2: `sections`, `settings`, and `threads.section_id`/`position`
+  (old threads land in Recents, newest first).
+- The writer saves sections, moves and settings, and deletes a removed
+  section. `settingsOf()` covers the last thread, project and backend; window
+  sizes go through `Persistence.saveSetting()`. Only the keys in
+  `SETTING_KEYS` are accepted.
+- Launch: `loadStorage()` (open, then `load`: everything but message text,
+  with each thread's count; 2-second limit). `buildRestoredState()` builds
+  the state (built-in sections only for a database with none; Pinned always
+  exists; a thread whose section is gone goes to Recents; an unknown last
+  thread or backend is dropped and cleared) and the `saved` baseline the
+  writer starts from. `AppStateStore.restore()` installs it before any window
+  opens. The last project is re-approved through `ProjectFileAccess`.
+- Per-thread loading: `Thread` gained `messageCount` and `messagesLoaded`.
+  `ThreadLoader` reads a thread with `loadMessages` (a gap in positions fails
+  the read) and dispatches the main-only `loadThreadMessages` action. The
+  writer emits nothing for that change and uses `messageCount` for its
+  empty-thread rule. `state:dispatch` (`sendMessage`), `ai:sendMessage` and
+  `threads:getMessages` load first; `applyAction` and `ReplyRunner` refuse an
+  unloaded thread with a fixed message.
+- Windows: `toIndexState()` / `toStateSnapshot()` in `state:get` and the
+  broadcast; `threads:getMessages`; `useThreadMessages`; `ChatPanel` keeps a
+  finished reply on screen until its stored message arrives. A window store
+  without a bridge keeps the full state itself.
+- Window sizes: `electron/windowBounds.ts` (pure) and `windows.ts`
+  (`rememberBounds()`, saved 500 ms after a resize or move and on close). A
+  saved position is used only if the window would be on a screen; under
+  Wayland no position is saved.
+- Tests: `storage.migrations`, `storage.worker`, `storage.writer`,
+  `storage.restore` (a busy state survives a save, a launch and per-thread
+  loads unchanged), `storage.loader`, `threadIndex`, `windowBounds`, and the
+  replaced window-store tests in `useAppStore` and `ai.replies` (340 tests).
+- App checks (2026-11-17, both windows): restored chats, sections, pin and
+  collapse state, last chat and project after a restart; old chats open in
+  both windows; sending in an old chat, the reply, and both after a restart;
+  window sizes after a restart.
+- Left for later: moving a chat into a section from the UI (drag or a "Move
+  to…" menu; the `moveThread` action exists), unloading chats from memory,
+  retrying a failed write.
 
 ## Milestone 4 – Files and editor
 

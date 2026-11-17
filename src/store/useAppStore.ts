@@ -3,12 +3,15 @@ import {
   applyAction,
   createInitialSharedState,
   findThread,
+  toIndexState,
+  type IndexState,
   type RendererAction,
   type SharedState,
 } from '../../shared/appState';
 import type { StateApi, StateSnapshot } from '../../shared/ipc/state';
+import type { ThreadsApi } from '../../shared/ipc/threads';
 import { getBridge } from '../lib/bridge';
-import type { BackendProvider, NavTab, Thread } from '../types';
+import type { BackendProvider, IpcResult, Message, NavTab, ThreadSummary } from '../types';
 
 export { DEFAULT_THREAD_TITLE, findThread, PINNED_SECTION_ID } from '../../shared/appState';
 
@@ -22,8 +25,14 @@ export interface WindowLocalState {
   isArtifactsPanelOpen: boolean;
 }
 
-/** This window's copy of the shared state, plus its own UI state. */
-export type AppStateData = SharedState & WindowLocalState;
+/**
+ * This window's copy of the shared state (a thread index without message
+ * text, Phase 3c), plus its own UI state.
+ */
+export type AppStateData = IndexState & WindowLocalState;
+
+/** The parts of `window.electronAPI` a window store uses. */
+export type WindowBridge = StateApi & ThreadsApi;
 
 /**
  * Shared-state actions are requests: with a bridge they go to the main
@@ -47,6 +56,8 @@ export interface AppActions {
   removeSection: (sectionId: string) => void;
   toggleSectionCollapsed: (sectionId: string) => void;
   setSelectedBackend: (backend: BackendProvider) => void;
+  /** Fetches a thread's messages, oldest first (Phase 3c). */
+  loadThreadMessages: (threadId: string) => Promise<IpcResult<Message[]>>;
   setComposerDraft: (draft: string) => void;
   toggleSidebar: () => void;
   toggleArtifactsPanel: () => void;
@@ -54,9 +65,9 @@ export interface AppActions {
 
 export type AppStore = AppStateData & AppActions;
 
-export function createInitialState(): AppStateData {
+export function createInitialState(shared: SharedState = createInitialSharedState()): AppStateData {
   return {
-    ...createInitialSharedState(),
+    ...toIndexState(shared),
     activeNavTab: 'chat',
     composerDraft: '',
     isSidebarCollapsed: false,
@@ -64,19 +75,8 @@ export function createInitialState(): AppStateData {
   };
 }
 
-function pickSharedState(state: AppStateData): SharedState {
-  return {
-    sections: state.sections,
-    recents: state.recents,
-    activeThreadId: state.activeThreadId,
-    activeProjectPath: state.activeProjectPath,
-    activeProjectName: state.activeProjectName,
-    selectedBackend: state.selectedBackend,
-  };
-}
-
 /** The selected conversation, or `undefined` when none is selected. */
-export function selectActiveThread(state: AppStore): Thread | undefined {
+export function selectActiveThread(state: AppStore): ThreadSummary | undefined {
   return state.activeThreadId === null ? undefined : findThread(state, state.activeThreadId);
 }
 
@@ -87,11 +87,16 @@ export function selectActiveThread(state: AppStore): Thread | undefined {
  * to it and the store changes when a snapshot comes back. Without a bridge
  * (a regular browser, or a unit test) actions are applied locally.
  */
-export function createAppStore(bridge?: StateApi) {
+export function createAppStore(bridge?: WindowBridge) {
+  // Without a bridge this window is its own "main": it keeps the full state,
+  // messages included, and shows the same index a real window would get.
+  let local = createInitialSharedState();
+
   const store = create<AppStore>()((set, get) => {
     const dispatch = (action: RendererAction): void => {
       if (bridge === undefined) {
-        set(applyAction(pickSharedState(get()), action));
+        local = applyAction(local, action);
+        set(toIndexState(local));
         return;
       }
       bridge
@@ -107,7 +112,7 @@ export function createAppStore(bridge?: StateApi) {
     };
 
     return {
-      ...createInitialState(),
+      ...createInitialState(local),
 
       setActiveNavTab: (tab) => set({ activeNavTab: tab }),
 
@@ -135,6 +140,16 @@ export function createAppStore(bridge?: StateApi) {
       removeSection: (sectionId) => dispatch({ type: 'removeSection', sectionId }),
       toggleSectionCollapsed: (sectionId) => dispatch({ type: 'toggleSectionCollapsed', sectionId }),
       setSelectedBackend: (backend) => dispatch({ type: 'setSelectedBackend', backend }),
+
+      loadThreadMessages: async (threadId) => {
+        if (bridge !== undefined) {
+          return bridge.getThreadMessages(threadId);
+        }
+        const thread = findThread(local, threadId);
+        return thread === undefined
+          ? { ok: false, error: 'That conversation no longer exists.' }
+          : { ok: true, value: thread.messages };
+      },
 
       setComposerDraft: (draft) => set({ composerDraft: draft }),
       toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),

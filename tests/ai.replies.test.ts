@@ -11,9 +11,10 @@ import {
 import { AppStateStore } from '../electron/appStateStore';
 import { StreamHub } from '../electron/streams/streamHub';
 import { findThread } from '../shared/appState';
-import type { StateApi } from '../shared/ipc/state';
+import { readThreadMessages } from '../electron/threadMessages';
+import { toStateSnapshot } from '../shared/ipc/state';
 import type { Thread } from '../shared/types';
-import { createAppStore } from '../src/store/useAppStore';
+import { createAppStore, type WindowBridge } from '../src/store/useAppStore';
 
 let hub: StreamHub;
 let appState: AppStateStore;
@@ -252,14 +253,18 @@ describe('failure and cancellation', () => {
 });
 
 describe('two windows', () => {
-  function connectWindow(main: AppStateStore): StateApi {
+  // Like the real IPC: the thread index in snapshots, messages on request.
+  function connectWindow(main: AppStateStore): WindowBridge {
     return {
-      getAppState: async () => ({ ok: true, value: main.getSnapshot() }),
+      getAppState: async () => ({ ok: true, value: toStateSnapshot(main.getSnapshot()) }),
       dispatch: async (action) => {
         main.dispatch(action);
         return { ok: true, value: null };
       },
-      onStateChanged: (listener) => main.subscribe(listener),
+      onStateChanged: (listener) =>
+        main.subscribe((snapshot) => listener(toStateSnapshot(snapshot))),
+      getThreadMessages: async (threadId) =>
+        readThreadMessages(main.getSnapshot().state, threadId),
     };
   }
 
@@ -273,7 +278,13 @@ describe('two windows', () => {
     await until(() => thread(threadId).runningReply === null);
     for (const store of [workspace, ide]) {
       expect(findThread(store.getState(), threadId)?.runningReply).toBeNull();
-      expect(findThread(store.getState(), threadId)?.messages).toEqual(thread(threadId).messages);
+      expect(findThread(store.getState(), threadId)?.messageCount).toBe(
+        thread(threadId).messages.length,
+      );
+      expect(await store.getState().loadThreadMessages(threadId)).toEqual({
+        ok: true,
+        value: thread(threadId).messages,
+      });
     }
   });
 });

@@ -9,6 +9,7 @@ import { ReplyRunner } from '../ai/replies';
 import { parseMessageContent, parseThreadId } from '../ai/requests';
 import type { AppStateStore } from '../appStateStore';
 import type { KeyStore } from '../secrets/keyStore';
+import type { ThreadLoader } from '../storage/threadLoader';
 import type { StreamHub } from '../streams/streamHub';
 import type { WindowRegistry } from '../windows';
 import { handleFromAppWindow } from './handle';
@@ -19,10 +20,18 @@ interface AiIpcDependencies {
   streams: StreamHub;
   /** Saved API keys, read by the API-key providers when a reply starts. */
   secrets: KeyStore;
+  /** Loads a restored thread's messages before a reply is added to it (Phase 3c). */
+  threadLoader: ThreadLoader;
 }
 
 /** Registers the `ai:*` handlers. Replies run in main and stream through `streams`. */
-export function registerAiIpc({ windows, appState, streams, secrets }: AiIpcDependencies): void {
+export function registerAiIpc({
+  windows,
+  appState,
+  streams,
+  secrets,
+  threadLoader,
+}: AiIpcDependencies): void {
   // Packaged builds never answer with the fake provider.
   const registry = new ProviderRegistry({ allowTestStandIn: !app.isPackaged });
   const claudeCli = createClaudeCliProvider();
@@ -34,11 +43,19 @@ export function registerAiIpc({ windows, appState, streams, secrets }: AiIpcDepe
   registry.register(createOpenRouterProvider({ keys: secrets }));
   const replies = new ReplyRunner({ hub: streams, appState, registry });
 
-  handleFromAppWindow<StartedReply>(AI_CHANNELS.sendMessage, windows, (_event, threadIdValue, contentValue) => {
+  handleFromAppWindow<StartedReply>(AI_CHANNELS.sendMessage, windows, async (_event, threadIdValue, contentValue) => {
     const threadId = parseThreadId(threadIdValue);
     const content = parseMessageContent(contentValue);
     if (threadId === undefined || content === undefined) {
       return { ok: false, error: 'Request rejected: it is not a valid message.' };
+    }
+    // The reply must see the whole conversation, so a restored thread's
+    // earlier messages are read first.
+    if (threadId !== null) {
+      const loaded = await threadLoader.ensureLoaded(threadId);
+      if (!loaded.ok) {
+        return loaded;
+      }
     }
     return replies.send(threadId, content);
   });

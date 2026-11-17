@@ -7,9 +7,11 @@ import { registerFsIpc } from './ipc/fs';
 import { registerSecretsIpc } from './ipc/secrets';
 import { registerStateIpc } from './ipc/state';
 import { registerStreamsIpc } from './ipc/streams';
+import { registerThreadsIpc } from './ipc/threads';
 import { registerWindowsIpc } from './ipc/windows';
 import { ProjectFileAccess } from './projectFiles';
 import { startStorage } from './storage';
+import { ThreadLoader } from './storage/threadLoader';
 import { WindowRegistry } from './windows';
 
 // This file is bundled to dist-electron/main.js, next to preload.cjs.
@@ -22,20 +24,23 @@ const windows = new WindowRegistry({
 });
 const appState = new AppStateStore();
 const projectFiles = new ProjectFileAccess();
+const threadLoader = new ThreadLoader(appState);
 
 app.on('window-all-closed', () => app.quit());
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     // One line per IPC domain; handlers live in electron/ipc/<domain>.ts.
     registerFsIpc({ windows, projectFiles, appState });
-    registerStateIpc({ windows, appState });
+    registerStateIpc({ windows, appState, threadLoader });
     const streams = registerStreamsIpc({ windows });
     const secrets = registerSecretsIpc({ windows });
-    registerAiIpc({ windows, appState, streams, secrets });
+    registerAiIpc({ windows, appState, streams, secrets, threadLoader });
     registerWindowsIpc({ windows });
-    startStorage(appState);
+    registerThreadsIpc({ windows, appState, threadLoader });
+    // Restores saved threads before any window asks for the state.
+    await startStorage({ appState, projectFiles, threadLoader, windows });
     windows.show('workspace');
   })
   .catch((error: unknown) => {

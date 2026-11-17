@@ -1,4 +1,5 @@
 import { findThread } from '../../shared/appState';
+import { THREAD_NOT_LOADED_ERROR } from '../storage/threadLoader';
 import type { StartedReply } from '../../shared/ipc/ai';
 import type { IpcResult } from '../../shared/types';
 import type { AppStateStore } from '../appStateStore';
@@ -53,6 +54,11 @@ export class ReplyRunner {
     const known = threadId === null ? undefined : findThread(this.appState.getSnapshot().state, threadId);
     if (known !== undefined && known.runningReply !== null) {
       return { ok: false, error: THREAD_BUSY_ERROR };
+    }
+    // Main loads a restored thread's messages first (Phase 3c); without them
+    // the reply would not see the conversation.
+    if (known !== undefined && !known.messagesLoaded) {
+      return { ok: false, error: THREAD_NOT_LOADED_ERROR };
     }
 
     // 3. Target thread: the given one, or a new (or reused empty) one.

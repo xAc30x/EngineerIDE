@@ -1,50 +1,149 @@
-import { findThread, type SharedState } from '../../shared/appState';
+import type { SharedState } from '../../shared/appState';
 import type { IpcResult, Thread } from '../../shared/types';
-import type { StorageOp } from './protocol';
+import {
+  STORAGE_ERRORS,
+  type SettingKey,
+  type StateSettingKey,
+  type StorageOp,
+  type StoredData,
+  type StoredSection,
+} from './protocol';
 
 /**
- * The one writer (Phase 3b): turns each change to the shared state into the
- * storage ops that save it. Pure, so it is unit-tested without a database.
+ * The one writer (Phases 3b and 3c): turns each change to the shared state
+ * into the storage ops that save it. Pure, so it is unit-tested without a
+ * database.
  *
- * Write-only by design. 3b never loads data back, so a thread missing from
- * memory is not a reason to delete it from the file: it may be from an earlier
- * session. Sections are not stored until 3c, and a running reply is stored
- * only once it finishes, as messages.
+ * Threads and messages are only added or updated, never deleted (the app has
+ * no way to delete them yet). A removed section is deleted. Empty threads are
+ * not saved, and a running reply is saved only once it finishes, as messages.
  */
 
-function allThreads(state: SharedState): Thread[] {
-  return [...state.sections.flatMap((section) => section.items), ...state.recents];
+interface PlacedThread {
+  thread: Thread;
+  sectionId: string | null;
+  position: number;
 }
 
-/** Ops that save what changed from `previous` to `next`, threads first. */
+/** Every thread with the section it is in (`null` for Recents) and its index there. */
+function placedThreads(state: SharedState): Map<string, PlacedThread> {
+  const placed = new Map<string, PlacedThread>();
+  for (const section of state.sections) {
+    section.items.forEach((thread, position) => {
+      placed.set(thread.id, { thread, sectionId: section.id, position });
+    });
+  }
+  state.recents.forEach((thread, position) => {
+    placed.set(thread.id, { thread, sectionId: null, position });
+  });
+  return placed;
+}
+
+function storedSections(state: SharedState): Map<string, StoredSection> {
+  return new Map(
+    state.sections.map((section, position) => [
+      section.id,
+      {
+        id: section.id,
+        title: section.title,
+        kind: section.kind,
+        position,
+        isCollapsed: section.isCollapsed,
+      },
+    ]),
+  );
+}
+
+function sameSection(a: StoredSection, b: StoredSection): boolean {
+  return (
+    a.title === b.title &&
+    a.kind === b.kind &&
+    a.position === b.position &&
+    a.isCollapsed === b.isCollapsed
+  );
+}
+
+/** The settings kept between runs, read from the state. */
+export function settingsOf(state: SharedState): Record<StateSettingKey, string | null> {
+  return {
+    activeThreadId: state.activeThreadId,
+    activeProjectPath: state.activeProjectPath,
+    selectedBackend: state.selectedBackend,
+  };
+}
+
+/**
+ * Ops that save what changed from `previous` to `next`: sections first, then
+ * threads and their new messages, then settings, then removed sections.
+ */
 export function storageOpsForChange(previous: SharedState, next: SharedState): StorageOp[] {
   const ops: StorageOp[] = [];
-  for (const thread of allThreads(next)) {
-    // An empty thread is not saved: the app reuses or drops it freely.
-    if (thread.messages.length === 0) continue;
 
-    const before = findThread(previous, thread.id);
-    const savedBefore = before !== undefined && before.messages.length > 0;
-    if (!savedBefore || before.title !== thread.title || before.updatedAt !== thread.updatedAt) {
+  const sectionsBefore = storedSections(previous);
+  const sectionsAfter = storedSections(next);
+  for (const section of sectionsAfter.values()) {
+    const before = sectionsBefore.get(section.id);
+    if (before === undefined || !sameSection(before, section)) {
+      ops.push({ kind: 'saveSection', section });
+    }
+  }
+
+  const threadsBefore = placedThreads(previous);
+  for (const { thread, sectionId, position } of placedThreads(next).values()) {
+    // An empty thread is not saved: the app reuses or drops it freely.
+    if (thread.messageCount === 0) continue;
+
+    const before = threadsBefore.get(thread.id);
+    const savedBefore = before !== undefined && before.thread.messageCount > 0;
+    if (
+      !savedBefore ||
+      before.thread.title !== thread.title ||
+      before.thread.updatedAt !== thread.updatedAt ||
+      before.sectionId !== sectionId ||
+      before.position !== position
+    ) {
       const { id, title, createdAt, updatedAt } = thread;
-      ops.push({ kind: 'saveThread', thread: { id, title, createdAt, updatedAt } });
+      ops.push({
+        kind: 'saveThread',
+        thread: { id, title, createdAt, updatedAt, sectionId, position },
+      });
     }
 
-    const knownIds = new Set(before?.messages.map((message) => message.id));
-    thread.messages.forEach((message, position) => {
+    // Messages just read from the database (a thread that was not loaded
+    // before) are already saved.
+    const knownIds = new Set(
+      (before?.thread.messagesLoaded === false ? thread : before?.thread)?.messages.map(
+        (message) => message.id,
+      ),
+    );
+    thread.messages.forEach((message, index) => {
       if (knownIds.has(message.id)) return;
       ops.push({
         kind: 'saveMessage',
         message: {
           id: message.id,
           threadId: thread.id,
-          position,
+          position: index,
           role: message.role,
           content: message.content,
           createdAt: message.createdAt,
         },
       });
     });
+  }
+
+  const settingsBefore = settingsOf(previous);
+  const settingsAfter = settingsOf(next);
+  for (const key of Object.keys(settingsAfter) as StateSettingKey[]) {
+    if (settingsBefore[key] !== settingsAfter[key]) {
+      ops.push({ kind: 'saveSetting', key, value: settingsAfter[key] });
+    }
+  }
+
+  for (const id of sectionsBefore.keys()) {
+    if (!sectionsAfter.has(id)) {
+      ops.push({ kind: 'deleteSection', id });
+    }
   }
   return ops;
 }
@@ -58,28 +157,64 @@ export interface StateSource {
 /** The parts of `StorageClient` the writer needs. */
 export interface StorageSink {
   request(request: { type: 'open'; filePath: string }): Promise<IpcResult<number>>;
+  request(request: { type: 'load' }): Promise<IpcResult<StoredData>>;
   request(request: { type: 'write'; ops: StorageOp[] }): Promise<IpcResult<null>>;
   close(): Promise<void>;
 }
 
+/**
+ * Opens the database and reads everything in it (Phase 3c). Gives up after
+ * `timeoutMs`, so a stuck worker cannot hold up the launch.
+ */
+export async function loadStorage(
+  sink: StorageSink,
+  filePath: string,
+  timeoutMs: number,
+): Promise<IpcResult<StoredData>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<IpcResult<StoredData>>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ ok: false, error: STORAGE_ERRORS.loadTimedOut }),
+      timeoutMs,
+    );
+  });
+  const read = (async (): Promise<IpcResult<StoredData>> => {
+    const opened = await sink.request({ type: 'open', filePath });
+    if (!opened.ok) return opened;
+    return sink.request({ type: 'load' });
+  })();
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface Persistence {
+  /**
+   * Saves a setting that is not part of the shared state (a window's size),
+   * in order with the other writes.
+   */
+  saveSetting(key: SettingKey, value: string | null): void;
   /** Sends nothing more, waits for every write already sent, and closes. */
   close(): Promise<void>;
 }
 
 /**
- * Opens the database and saves every later state change, in order. Writes
- * are sent without waiting: the worker runs them in the order they arrive.
- * A failure is reported once through `onError` (a fixed message) and the app
- * carries on in memory; after a failed open nothing more is sent.
+ * Saves every change to the state, in order, starting from `saved`: the state
+ * as it already is in the database. Whatever differs from it right now (for
+ * example the built-in sections of a new database) is written first. Writes
+ * are sent without waiting: the worker runs them in the order they arrive. A
+ * failure is reported once through `onError` (a fixed message) and the app
+ * carries on in memory.
  */
 export function startPersistence(
   source: StateSource,
   sink: StorageSink,
-  filePath: string,
+  saved: SharedState,
   onError: (error: string) => void,
 ): Persistence {
-  let previous = source.getSnapshot().state;
+  let previous = saved;
   let enabled = true;
   let reported = false;
   const report = (error: string) => {
@@ -88,23 +223,23 @@ export function startPersistence(
     onError(error);
   };
 
-  void sink.request({ type: 'open', filePath }).then((result) => {
-    if (!result.ok) {
-      enabled = false;
-      report(result.error);
-    }
-  });
-
-  const unsubscribe = source.subscribe(({ state }) => {
-    const ops = storageOpsForChange(previous, state);
-    previous = state;
+  const write = (ops: StorageOp[]) => {
     if (!enabled || ops.length === 0) return;
     void sink.request({ type: 'write', ops }).then((result) => {
       if (!result.ok) report(result.error);
     });
-  });
+  };
+  const save = (state: SharedState) => {
+    const ops = storageOpsForChange(previous, state);
+    previous = state;
+    write(ops);
+  };
+
+  save(source.getSnapshot().state);
+  const unsubscribe = source.subscribe(({ state }) => save(state));
 
   return {
+    saveSetting: (key, value) => write([{ kind: 'saveSetting', key, value }]),
     close: async () => {
       unsubscribe();
       enabled = false;

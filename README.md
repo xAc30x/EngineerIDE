@@ -3,7 +3,7 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: two-window shell with streamed replies (roadmap Phases 0, 2a–2d, 3a–3b)
+## Status: two-window shell with streamed replies (roadmap Phases 0, 2a–2d, 3a–3c)
 
 The app runs as two windows that stay open together, so they can sit side by
 side or on separate monitors:
@@ -40,17 +40,20 @@ kept on this computer; it is only ever sent to the provider it belongs to. The
 form shows only whether a key is set, never the key. Until a backend has a key,
 the backend selector says so.
 
-Chats are saved as you go: every conversation with at least one message, and
-each message and finished reply, is written to a SQLite database
-(`engineeride.db`) in the app's data folder (`~/.config/engineer-ide/` on
-Linux). Saving uses the SQLite built into Electron, in a background thread.
-The app does not load saved chats back yet, so each run still starts empty;
-that comes in roadmap Phase 3c. If the database cannot be used, the app keeps
-working without saving and prints a `[storage]` line in the terminal.
+Chats are saved as you go and come back when you start the app again: your
+conversations, the sidebar sections (including pinned and collapsed ones), the
+chat you had open, the project folder (if it still exists), the AI backend you
+picked, and each window's size. On Linux under Wayland (for example Pop!_OS)
+only the size comes back, because apps cannot choose their window position
+there. A chat's messages are read from disk only when you open it. Everything
+is kept in a SQLite database (`engineeride.db`) in the app's data folder
+(`~/.config/engineer-ide/` on Linux), using the SQLite built into Electron, in
+a background thread. If the database cannot be used, the app starts empty,
+keeps working without saving, and prints a `[storage]` line in the terminal.
 
-Not included yet: a model picker (each API backend uses a default model), a
-code editor, a terminal, and loading saved chats on start. The order they will
-be built in is in [docs/ROADMAP.md](docs/ROADMAP.md).
+Not included yet: a model picker (each API backend uses a default model),
+moving a chat into a section (only pinning works today), a code editor, and a
+terminal. The order they will be built in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 

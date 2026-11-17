@@ -24,9 +24,11 @@ function memoryHandler() {
   return { db, handle };
 }
 
-const thread = (overrides: Partial<{ title: string; updatedAt: number }> = {}): StorageOp => ({
+const thread = (
+  overrides: Partial<{ title: string; updatedAt: number; sectionId: string | null; position: number }> = {},
+): StorageOp => ({
   kind: 'saveThread',
-  thread: { id: 't1', title: 'Hello', createdAt: 1, updatedAt: 1, ...overrides },
+  thread: { id: 't1', title: 'Hello', createdAt: 1, updatedAt: 1, sectionId: null, position: 0, ...overrides },
 });
 
 const message = (id: string, position: number, threadId = 't1'): StorageOp => ({
@@ -66,6 +68,12 @@ describe('parseStorageRequest', () => {
         },
       ],
     },
+    { type: 'write', ops: [{ kind: 'saveSection', section: { id: 's', title: 'x', kind: 'other', position: 0, isCollapsed: false } }] },
+    { type: 'write', ops: [{ kind: 'saveSection', section: { id: 's', title: 'x', kind: 'custom', position: 0, isCollapsed: 'no' } }] },
+    { type: 'write', ops: [{ kind: 'deleteSection', id: '' }] },
+    { type: 'write', ops: [{ kind: 'saveSetting', key: 'apiKey', value: 'x' }] },
+    { type: 'write', ops: [{ kind: 'saveSetting', key: 'activeThreadId', value: 7 }] },
+    { type: 'write', ops: [{ kind: 'saveThread', thread: { id: 't', title: 'x', createdAt: 1, updatedAt: 1, sectionId: 5, position: 0 } }] },
   ])('rejects %j', (value) => {
     expect(parseStorageRequest(value)).toBeNull();
   });
@@ -112,6 +120,50 @@ describe('createStorageHandler', () => {
     expect(db.prepare('SELECT id, position, content FROM messages').all()).toEqual([
       { id: 'm1', position: 0, content: 'text m1' },
     ]);
+  });
+
+  it('saves where a thread sits, and updates it when it moves', () => {
+    const { db, handle } = memoryHandler();
+    handle({ type: 'open', filePath: ':memory:' });
+
+    handle({ type: 'write', ops: [thread()] });
+    handle({ type: 'write', ops: [thread({ sectionId: 'pinned', position: 2 })] });
+
+    expect(db.prepare('SELECT section_id, position FROM threads').all()).toEqual([
+      { section_id: 'pinned', position: 2 },
+    ]);
+  });
+
+  it('saves, updates and deletes sections', () => {
+    const { db, handle } = memoryHandler();
+    handle({ type: 'open', filePath: ':memory:' });
+    const section = (title: string, isCollapsed: boolean): StorageOp => ({
+      kind: 'saveSection',
+      section: { id: 's1', title, kind: 'custom', position: 1, isCollapsed },
+    });
+
+    handle({ type: 'write', ops: [section('Work', false)] });
+    handle({ type: 'write', ops: [section('Work', true)] });
+    expect(db.prepare('SELECT id, title, kind, position, is_collapsed FROM sections').all()).toEqual([
+      { id: 's1', title: 'Work', kind: 'custom', position: 1, is_collapsed: 1 },
+    ]);
+
+    handle({ type: 'write', ops: [{ kind: 'deleteSection', id: 's1' }] });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM sections').get()).toEqual({ n: 0 });
+  });
+
+  it('saves a setting, and clears it when set to null', () => {
+    const { db, handle } = memoryHandler();
+    handle({ type: 'open', filePath: ':memory:' });
+
+    handle({ type: 'write', ops: [{ kind: 'saveSetting', key: 'activeThreadId', value: 't1' }] });
+    handle({ type: 'write', ops: [{ kind: 'saveSetting', key: 'activeThreadId', value: 't2' }] });
+    expect(db.prepare('SELECT key, value FROM settings').all()).toEqual([
+      { key: 'activeThreadId', value: 't2' },
+    ]);
+
+    handle({ type: 'write', ops: [{ kind: 'saveSetting', key: 'activeThreadId', value: null }] });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM settings').get()).toEqual({ n: 0 });
   });
 
   it('applies a write all-or-nothing', () => {

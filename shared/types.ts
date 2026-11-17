@@ -39,7 +39,22 @@ export interface Thread {
   updatedAt: number;
   /** The reply being produced for this thread, or `null`. Set by the main process only. */
   runningReply: RunningReply | null;
+  /** How many messages the thread has, loaded or not (Phase 3c). */
+  messageCount: number;
+  /**
+   * False for a thread restored at launch whose messages are still only in
+   * the database: `messages` is empty until main loads them (Phase 3c).
+   * Nothing can be added to a thread before its messages are loaded.
+   */
+  messagesLoaded: boolean;
 }
+
+/**
+ * A thread as windows see it (Phase 3c): everything but the message text. A
+ * window fetches the messages of the thread it shows with
+ * `getThreadMessages()`, again whenever `messageCount` changes.
+ */
+export type ThreadSummary = Omit<Thread, 'messages' | 'messagesLoaded'>;
 
 /** A reply in progress. Its text is in the stream with this id until it finishes. */
 export interface RunningReply {
@@ -56,6 +71,11 @@ export interface Section {
   kind: SectionKind;
   isCollapsed: boolean;
   items: Thread[];
+}
+
+/** A section as windows see it: its threads without their messages (Phase 3c). */
+export interface SectionSummary extends Omit<Section, 'items'> {
+  items: ThreadSummary[];
 }
 
 // ---------------------------------------------------------------------------
