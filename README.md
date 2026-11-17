@@ -41,12 +41,14 @@ form shows only whether a key is set, never the key. Until a backend has a key,
 the backend selector says so.
 
 Not included yet: a model picker (each API backend uses a default model), a
-code editor, a terminal, and saving chats between runs. The order they will be built
+code editor, a terminal, and saving chats between runs (chats will be saved
+with the SQLite built into Electron, chosen in roadmap Phase 3a). The order they will be built
 in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
-- Node.js 22 or newer (includes `npm`)
+- Node.js 22.13 or newer (includes `npm`). The tests use Node's built-in
+  SQLite module, which older 22.x releases hide behind a flag.
 
 ## Getting started
 
