@@ -48,6 +48,7 @@ time and follow its rules ("How to work a phase").
 - `src/` – renderer (React). Browser APIs only. Both windows load the same bundle.
   - `store/useAppStore.ts` – one Zustand store per window: a mirror of the shared state plus that window's own UI state.
   - `lib/windowKind.ts` – which window this is, and how to open the other one.
+  - `config/commands.ts` – the command palette's `COMMAND_REGISTRY` (pure: each action gets its helpers passed in; `commandsForWindow()` filters by window and desktop); `components/shell/CommandPalette.tsx` shows them.
   - `hooks/useThreadMessages.ts` – fetches the messages of the thread a window shows, again when its `messageCount` changes; keeps the old list on screen during a refetch.
   - `hooks/useStream.ts` – follows one stream by id: the text so far, then live chunks, plus its status and `cancel()`.
   - `components/` – `shell/`, `sidebar/`, `workspace/`, `ide/`, `shared/`, `settings/` (API key form).
@@ -67,7 +68,7 @@ time and follow its rules ("How to work a phase").
 | Kind of state | Owner | Examples |
 | --- | --- | --- |
 | Shared | Main process, `electron/appStateStore.ts` | sections, threads, messages, each thread's running reply, active thread, active project, selected backend. Windows receive a thread index (`toIndexState()`: `messageCount`, no message text) and fetch messages with `getThreadMessages()`. |
-| Window-local | That window's Zustand store or React state | chat draft, open sidebar page, sidebar and panel toggles, expanded folders |
+| Window-local | That window's Zustand store or React state | chat draft, open sidebar page, sidebar and panel toggles, command palette open, expanded folders |
 | Long-running output | Main process, `electron/streams/streamHub.ts`, by stream id | AI replies, terminal output |
 | Saved to disk | Storage worker, `electron/storage/`, written only by `writer.ts` | threads, messages, sections, active thread, active project, selected backend, window sizes (never a running reply) |
 
@@ -97,6 +98,13 @@ time and follow its rules ("How to work a phase").
 - `fs:readDir` only reads inside folders the user picked through the native dialog (`ProjectFileAccess` in `electron/projectFiles.ts`). Keep that check when adding file handlers.
 - `window.electronAPI` is typed as optional; renderer code must handle it being absent (use `getBridge()` in `src/lib/bridge.ts`).
 - Secrets (API keys, tokens) never go in the repo, the renderer, shared state, or logs. A key goes from the settings form to main once (`secrets:setApiKey`) and no channel returns it. Provider errors are fixed messages: never pass on text from a remote service or a caught error, which may quote the key (`tests/secrets.noLeak.test.ts` checks this). The production Content-Security-Policy blocks network requests from the renderer; AI backends must be reached through the main process.
+
+## Adding a command
+
+- Add one `CommandItem` to `COMMAND_REGISTRY` in `src/config/commands.ts`: a new kebab-case `id` (unique; `tests/commands.test.ts` checks), a `title`, one of the four categories, and an `action` that calls `closePalette()`.
+- Set `windows` when only some windows have the feature (for example `['workspace']`), and `requiresDesktop: true` when it needs the bridge (other window, native dialogs). Leave both out for commands every window can run.
+- If the action needs something new, add it to `CommandHelpers` and pass it in from `CommandPalette.tsx`; don't import the store or bridge into `commands.ts`.
+- Add the id to the expected lists in `tests/commands.test.ts`.
 
 ## Testing criteria
 

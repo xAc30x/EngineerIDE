@@ -79,6 +79,7 @@ describe('window-local state', () => {
       composerDraft: '',
       isSidebarCollapsed: false,
       isArtifactsPanelOpen: false,
+      isCommandPaletteOpen: false,
     });
   });
 
@@ -106,6 +107,18 @@ describe('window-local state', () => {
     store.getState().toggleArtifactsPanel();
     expect(store.getState().isSidebarCollapsed).toBe(true);
     expect(store.getState().isArtifactsPanelOpen).toBe(true);
+  });
+
+  it('opens, closes and toggles the command palette', () => {
+    const store = createAppStore();
+    store.getState().toggleCommandPalette();
+    expect(store.getState().isCommandPaletteOpen).toBe(true);
+    store.getState().toggleCommandPalette();
+    expect(store.getState().isCommandPaletteOpen).toBe(false);
+    store.getState().setCommandPaletteOpen(true);
+    expect(store.getState().isCommandPaletteOpen).toBe(true);
+    store.getState().setCommandPaletteOpen(false);
+    expect(store.getState().isCommandPaletteOpen).toBe(false);
   });
 });
 
@@ -195,6 +208,27 @@ describe('two windows on one main process', () => {
       expect(store.getState().activeProjectPath).toBe('project-path');
       expect(store.getState().activeProjectName).toBe('project');
     }
+  });
+
+  it('opens the command palette in one window only, without telling main', async () => {
+    const main = new AppStateStore();
+    const workspace = createAppStore(connectWindow(main));
+    const ide = createAppStore(connectWindow(main));
+    await flush();
+    const versionBefore = main.getSnapshot().version;
+
+    workspace.getState().toggleCommandPalette();
+    await flush();
+
+    expect(main.getSnapshot().version).toBe(versionBefore);
+    expect(workspace.getState().isCommandPaletteOpen).toBe(true);
+    expect(ide.getState().isCommandPaletteOpen).toBe(false);
+
+    // A shared change broadcast to both windows leaves the palette as it was.
+    ide.getState().sendMessage('Hello');
+    await flush();
+    expect(workspace.getState().isCommandPaletteOpen).toBe(true);
+    expect(ide.getState().isCommandPaletteOpen).toBe(false);
   });
 
   it('keeps the draft, the open page, and the panel toggles separate per window', async () => {
