@@ -9,6 +9,7 @@ import { registerStateIpc } from './ipc/state';
 import { registerStreamsIpc } from './ipc/streams';
 import { registerWindowsIpc } from './ipc/windows';
 import { ProjectFileAccess } from './projectFiles';
+import { startStorage } from './storage';
 import { WindowRegistry } from './windows';
 
 // This file is bundled to dist-electron/main.js, next to preload.cjs.
@@ -34,6 +35,7 @@ app
     const secrets = registerSecretsIpc({ windows });
     registerAiIpc({ windows, appState, streams, secrets });
     registerWindowsIpc({ windows });
+    startStorage(appState);
     windows.show('workspace');
   })
   .catch((error: unknown) => {
