@@ -1,6 +1,7 @@
 import { Bot, FileCode, FolderOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useProjectFolder } from '../../hooks/useProjectFolder';
+import { getBridge } from '../../lib/bridge';
 import type { FileNode } from '../../types';
 import { ChatPanel } from '../shared/ChatPanel';
 import { FileExplorer } from './FileExplorer';
@@ -28,8 +29,61 @@ function ExplorerEmptyState() {
   );
 }
 
-/** Center pane. The real code editor replaces this in a later milestone. */
+type PreviewState =
+  | { status: 'loading' }
+  | { status: 'loaded'; content: string }
+  | { status: 'error'; message: string };
+
+/** Reads the selected file through `fs:readFile` (Phase 4a). */
+function useFilePreview(filePath: string | null): PreviewState | null {
+  const [state, setState] = useState<PreviewState | null>(null);
+
+  useEffect(() => {
+    if (filePath === null) {
+      setState(null);
+      return;
+    }
+    const api = getBridge();
+    if (api === undefined) {
+      setState({
+        status: 'error',
+        message: 'File access is only available in the desktop app.',
+      });
+      return;
+    }
+    let current = true;
+    setState({ status: 'loading' });
+    api.readFile(filePath).then(
+      (result) => {
+        if (current) {
+          setState(
+            result.ok
+              ? { status: 'loaded', content: result.value.content }
+              : { status: 'error', message: result.error },
+          );
+        }
+      },
+      (cause: unknown) => {
+        if (current) {
+          setState({
+            status: 'error',
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [filePath]);
+
+  return state;
+}
+
+/** Center pane: a read-only view of the selected file. Phase 4b replaces it with the editor. */
 function EditorPlaceholder({ file }: { file: FileNode | null }) {
+  const preview = useFilePreview(file?.path ?? null);
+
   return (
     <section aria-label="Editor" className="flex min-w-0 flex-1 flex-col bg-canvas">
       <div className="flex h-9 shrink-0 items-center border-b border-line">
@@ -43,19 +97,25 @@ function EditorPlaceholder({ file }: { file: FileNode | null }) {
           </div>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <FileCode className="size-8 text-line" aria-hidden />
-        {file === null ? (
-          <p className="text-sm text-subtle">Select a file in the explorer.</p>
-        ) : (
-          <>
-            <p className="max-w-full truncate font-mono text-xs text-muted">{file.path}</p>
-            <p className="text-sm text-subtle">
-              The code editor is planned for a later milestone, so file contents are not shown yet.
+      {preview?.status === 'loaded' ? (
+        <pre
+          aria-label={`Contents of ${file?.name ?? 'file'}`}
+          className="min-h-0 flex-1 overflow-auto p-4 font-mono text-xs leading-5 text-fg"
+        >
+          {preview.content}
+        </pre>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+          <FileCode className="size-8 text-line" aria-hidden />
+          {file === null && <p className="text-sm text-subtle">Select a file in the explorer.</p>}
+          {preview?.status === 'loading' && <p className="text-sm text-subtle">Loading…</p>}
+          {preview?.status === 'error' && (
+            <p role="alert" className="max-w-full text-sm text-danger">
+              {preview.message}
             </p>
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
