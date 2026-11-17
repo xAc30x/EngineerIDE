@@ -58,7 +58,7 @@ request. A red CI run means the phase is not done.
 | 2a | Stream channel | Done |
 | 2b | Provider contract | Done |
 | 2c | Claude CLI provider | Done |
-| 2d | API-key providers | Built; app check pending |
+| 2d | API-key providers | Done |
 | 3a–3c | Persistence | Not started |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
@@ -300,6 +300,11 @@ repo. Renderers learn only whether a key is set.
   401, a mid-stream error and a thrown error, for all three backends, and
   checks that the key (and its first 12 characters) appears in no snapshot,
   stream delta, IPC result, or the file at rest.
+- App check (2026-11-16, both windows): a key saved in Settings was still
+  set after a restart, and the Anthropic API accepted it (HTTP 400 for an
+  account without credit, shown with the out-of-credit hint). A live streamed
+  reply from an API-key provider was not observed for lack of credit; the user
+  accepted the phase as done without it.
 
 ---
 
