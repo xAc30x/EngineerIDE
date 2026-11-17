@@ -1,20 +1,61 @@
 import { ChevronDown, ChevronRight, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
+import { useState, type DragEvent } from 'react';
 import { PINNED_SECTION_ID, useAppStore } from '../../store/useAppStore';
 import type { SectionSummary as Section, ThreadSummary as Thread } from '../../types';
 import { IconButton } from '../shared/IconButton';
+import { MoveMenu } from './MoveMenu';
+import { carriesThread, droppedThreadId, THREAD_DRAG_TYPE } from './moveThread';
+
+/**
+ * Lets a section (or Recents, `sectionId: null`) accept a chat dragged onto
+ * it. `isOver` is true while a chat is held above it.
+ */
+function useThreadDropTarget(sectionId: string | null) {
+  const moveThread = useAppStore((state) => state.moveThread);
+  const [isOver, setIsOver] = useState(false);
+
+  const onDragOver = (event: DragEvent) => {
+    if (!carriesThread([...event.dataTransfer.types])) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setIsOver(true);
+  };
+  const onDragLeave = (event: DragEvent) => {
+    // Moving onto a child element is not leaving.
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsOver(false);
+  };
+  const onDrop = (event: DragEvent) => {
+    setIsOver(false);
+    const threadId = droppedThreadId((type) => event.dataTransfer.getData(type));
+    if (threadId === null) return;
+    event.preventDefault();
+    moveThread(threadId, sectionId);
+  };
+
+  return { isOver, dropProps: { onDragOver, onDragLeave, onDrop } };
+}
+
+const DROP_HIGHLIGHT = 'rounded-md bg-hover ring-1 ring-line';
 
 interface ThreadRowProps {
   thread: Thread;
   isPinned: boolean;
+  /** The section the chat is in, or `null` for Recents. */
+  sectionId: string | null;
 }
 
-function ThreadRow({ thread, isPinned }: ThreadRowProps) {
+function ThreadRow({ thread, isPinned, sectionId }: ThreadRowProps) {
   const isActive = useAppStore((state) => state.activeThreadId === thread.id);
   const selectThread = useAppStore((state) => state.selectThread);
   const togglePinned = useAppStore((state) => state.togglePinned);
 
   return (
     <li
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(THREAD_DRAG_TYPE, thread.id);
+        event.dataTransfer.effectAllowed = 'move';
+      }}
       className={`group/thread flex items-center rounded-md pr-1 transition-colors ${
         isActive ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-fg'
       }`}
@@ -28,6 +69,9 @@ function ThreadRow({ thread, isPinned }: ThreadRowProps) {
       >
         {thread.title}
       </button>
+      <div className="opacity-0 group-hover/thread:opacity-100 focus-within:opacity-100 has-[[aria-pressed=true]]:opacity-100">
+        <MoveMenu threadId={thread.id} threadTitle={thread.title} sectionId={sectionId} />
+      </div>
       <IconButton
         label={isPinned ? 'Unpin chat' : 'Pin chat'}
         onClick={() => togglePinned(thread.id)}
@@ -43,11 +87,17 @@ function ThreadRow({ thread, isPinned }: ThreadRowProps) {
   );
 }
 
-function ThreadList({ threads, isPinned }: { threads: Thread[]; isPinned: boolean }) {
+interface ThreadListProps {
+  threads: Thread[];
+  isPinned: boolean;
+  sectionId: string | null;
+}
+
+function ThreadList({ threads, isPinned, sectionId }: ThreadListProps) {
   return (
     <ul className="flex flex-col gap-px">
       {threads.map((thread) => (
-        <ThreadRow key={thread.id} thread={thread} isPinned={isPinned} />
+        <ThreadRow key={thread.id} thread={thread} isPinned={isPinned} sectionId={sectionId} />
       ))}
     </ul>
   );
@@ -68,9 +118,10 @@ function SectionBlock({ section, visibleItems, isSearching }: SectionBlockProps)
 
   const isExpanded = isSearching || !section.isCollapsed;
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const { isOver, dropProps } = useThreadDropTarget(section.id);
 
   return (
-    <section aria-label={section.title}>
+    <section aria-label={section.title} {...dropProps} className={isOver ? DROP_HIGHLIGHT : ''}>
       <div className="group/section flex items-center pr-1">
         <button
           type="button"
@@ -104,7 +155,11 @@ function SectionBlock({ section, visibleItems, isSearching }: SectionBlockProps)
 
       {isExpanded &&
         (visibleItems.length > 0 ? (
-          <ThreadList threads={visibleItems} isPinned={section.id === PINNED_SECTION_ID} />
+          <ThreadList
+            threads={visibleItems}
+            isPinned={section.id === PINNED_SECTION_ID}
+            sectionId={section.id}
+          />
         ) : (
           <p className="px-2 py-1 text-xs text-subtle">No chats yet</p>
         ))}
@@ -135,6 +190,7 @@ export function SectionList({ searchQuery }: SectionListProps) {
     .filter(({ visibleItems }) => !isSearching || visibleItems.length > 0);
   const visibleRecents = filterThreads(recents);
   const hasNoMatches = isSearching && visibleSections.length === 0 && visibleRecents.length === 0;
+  const recentsDrop = useThreadDropTarget(null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -148,10 +204,14 @@ export function SectionList({ searchQuery }: SectionListProps) {
       ))}
 
       {(!isSearching || visibleRecents.length > 0) && (
-        <section aria-label="Recents">
+        <section
+          aria-label="Recents"
+          {...recentsDrop.dropProps}
+          className={recentsDrop.isOver ? DROP_HIGHLIGHT : ''}
+        >
           <h2 className="px-2 py-1 text-xs font-medium text-subtle">Recents</h2>
           {visibleRecents.length > 0 ? (
-            <ThreadList threads={visibleRecents} isPinned={false} />
+            <ThreadList threads={visibleRecents} isPinned={false} sectionId={null} />
           ) : (
             <p className="px-2 py-1 text-xs text-subtle">No chats yet</p>
           )}

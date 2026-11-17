@@ -519,9 +519,11 @@ its new place.
   collapse state, last chat and project after a restart; old chats open in
   both windows; sending in an old chat, the reply, and both after a restart;
   window sizes after a restart.
-- Left for later: moving a chat into a section from the UI (drag or a "Move
-  to…" menu; the `moveThread` action exists), unloading chats from memory,
-  retrying a failed write.
+- Left for later: unloading chats from memory, retrying a failed write.
+- Follow-up (2026-11-17, its own pull request, approved by the user): the
+  sidebar moves a chat by drag and drop onto a section or Recents, or with a
+  "Move to…" menu (`src/components/sidebar/moveThread.ts`, `MoveMenu.tsx`),
+  through the existing `moveThread` action.
 
 ### Command palette
 

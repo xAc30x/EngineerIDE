@@ -55,9 +55,11 @@ is kept in a SQLite database (`engineeride.db`) in the app's data folder
 a background thread. If the database cannot be used, the app starts empty,
 keeps working without saving, and prints a `[storage]` line in the terminal.
 
-Not included yet: a model picker (each API backend uses a default model),
-moving a chat into a section (only pinning works today), a code editor, and a
-terminal. The order they will be built in is in [docs/ROADMAP.md](docs/ROADMAP.md).
+To move a chat, drag it onto a section (or onto Recents) in the sidebar, or
+hover it and use the folder button ("Move to…").
+
+Not included yet: a model picker (each API backend uses a default model), a
+code editor, and a terminal. The order they will be built in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
