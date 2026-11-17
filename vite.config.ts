@@ -62,8 +62,14 @@ export default defineConfig({
     contentSecurityPolicy(),
     electron({
       // Built to dist-electron/main.js (ES module, see "main" in package.json).
+      // The storage worker (Phase 3b) is its own file, storage-worker.js,
+      // because a worker thread starts from a file; `node:sqlite` stays an
+      // import, like every Node built-in.
       main: {
-        entry: 'electron/main.ts',
+        entry: {
+          main: 'electron/main.ts',
+          'storage-worker': 'electron/storage/worker.ts',
+        },
       },
       // Built to dist-electron/preload.cjs. Sandboxed preload scripts must be
       // CommonJS, so the file extension states that explicitly.

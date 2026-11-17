@@ -60,7 +60,8 @@ request. A red CI run means the phase is not done.
 | 2c | Claude CLI provider | Done |
 | 2d | API-key providers | Done |
 | 3a | SQLite driver decision | Done |
-| 3b–3c | Persistence | Not started |
+| 3b | Storage layer | `[x]` Done |
+| 3c | Load on demand | Not started |
 | 4a–4c | Files and editor | Not started |
 | 5a–5b | Terminal | Not started |
 | 6a–6c | Artifacts | Not started |
@@ -340,10 +341,81 @@ Detailed when it is next. Module-level plan:
     adds nothing visible); the checks above ran in Electron's runtime without
     windows. The first in-app check is 3b's.
 - **3b – Storage layer.** `electron/storage/`: schema, migrations, and one
-  writer, in main. No window opens the database.
+  writer, in main. No window opens the database. Detailed below.
 - **3c – Load on demand.** The state snapshot becomes a thread index (ids,
   titles, sections); messages load per thread. Restore the last project,
   thread, and window positions on launch.
+
+### Phase 3b – Storage layer
+
+Status: `[x]` Done (2026-11-17).
+
+**Goal.** A SQLite database in the user data folder, created and upgraded by
+numbered migrations, and one writer in main that saves threads and messages as
+they change. Nothing is read back yet: loading is 3c.
+
+**Owns.** `electron/storage/` (schema, migrations, the worker, the main-side
+client, the writer), `tests/storage.*.test.ts`, and the one start-up line in
+`electron/main.ts`, plus the worker entry in `vite.config.ts` (outside the
+list; the user approved it for this phase).
+
+**Rules.**
+- Every query runs in one worker thread (Phase 3a). Main only sends messages.
+- One writer: only `electron/storage/` writes to the database, in order.
+- Write-only in 3b. Threads and messages are inserted or updated as they
+  change in this session; nothing is deleted, because 3b never loads data and
+  a "make the file match memory" writer would wipe the previous session.
+- Sections are not stored yet: the built-in sections get new random ids on
+  every launch and would pile up as duplicates. 3c stores them.
+- A thread's `runningReply` and stream text are never stored; a reply is
+  stored once it finishes, as messages.
+- If the database cannot open or a write fails, the app keeps working in
+  memory. Errors are fixed messages. No secret goes in the database.
+- No change to `src/`, `shared/`, the preload, or IPC.
+
+**Done when.**
+- Migrations create the schema on an empty database, are recorded in
+  SQLite's `user_version`, and running them twice changes nothing (tests).
+- The worker's request handler and the main-side client are tested without
+  Electron; the client reports a dead or failing worker as an error value.
+- The writer saves new threads, title changes and new messages, and never
+  deletes (tests).
+- `npm run build` emits the worker as its own file in `dist-electron/` with
+  `node:sqlite` kept as an import.
+- App check, both windows open: send a message, quit, and the thread and
+  message are in the database file.
+
+**As built.**
+- `electron/storage/`: `schema.ts` (migration 1: `threads` and `messages`,
+  `STRICT`, a role check, unique `(thread_id, position)`, messages reference
+  their thread), `migrations.ts` (each migration and its `user_version` bump in
+  one transaction; a database newer than the app is refused and left
+  untouched), `protocol.ts`, `handler.ts` (validates every request; `open`
+  turns on foreign keys and WAL and migrates; `write` applies a batch
+  all-or-nothing; threads upsert title and `updated_at`, messages are
+  insert-only), `worker.ts`, `client.ts`, `writer.ts`, `index.ts`.
+- The database is `engineeride.db` in Electron's user data folder
+  (`~/.config/engineer-ide/` on Linux). `startStorage(appState)` is the one
+  line in `electron/main.ts`.
+- `vite.config.ts` builds `electron/storage/worker.ts` to
+  `dist-electron/storage-worker.js` (shared code lands in a small chunk next
+  to it); `node:sqlite` stays an import. The built worker was also run inside
+  the installed Electron's Node against a scratch file.
+- Quitting waits for the writes already sent, at most 3 seconds, then quits.
+  Any storage failure prints one `[storage]` warning with a fixed message and
+  the app carries on in memory.
+- Tests: `tests/storage.migrations.test.ts`, `tests/storage.worker.test.ts`
+  (handler on an in-memory database; client against a fake worker, including a
+  crash and an exit), `tests/storage.writer.test.ts` (272 tests in all).
+- App check (2026-11-17, both windows, `npm run build && npm start`): one
+  message from each window with finished replies, quit, then a second launch
+  with more messages. The file held 2 threads and 4 user and 4 assistant
+  messages, with the first launch's rows still there, at schema version 1 and
+  with no foreign key problems.
+- Left for 3c: loading on start; storing sections (the built-in Work and
+  Personal sections get new random ids each launch, so they need fixed ids
+  first); a reply still running at quit is not saved; a write that fails is
+  not retried.
 
 ## Milestone 4 – Files and editor
 

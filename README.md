@@ -3,7 +3,7 @@
 Cross-platform (Linux and Windows) desktop AI workspace and IDE built with
 Electron, Vite, React, TypeScript, and Tailwind CSS.
 
-## Status: two-window shell with streamed replies (roadmap Phases 0 and 2a–2d)
+## Status: two-window shell with streamed replies (roadmap Phases 0, 2a–2d, 3a–3b)
 
 The app runs as two windows that stay open together, so they can sit side by
 side or on separate monitors:
@@ -40,10 +40,17 @@ kept on this computer; it is only ever sent to the provider it belongs to. The
 form shows only whether a key is set, never the key. Until a backend has a key,
 the backend selector says so.
 
+Chats are saved as you go: every conversation with at least one message, and
+each message and finished reply, is written to a SQLite database
+(`engineeride.db`) in the app's data folder (`~/.config/engineer-ide/` on
+Linux). Saving uses the SQLite built into Electron, in a background thread.
+The app does not load saved chats back yet, so each run still starts empty;
+that comes in roadmap Phase 3c. If the database cannot be used, the app keeps
+working without saving and prints a `[storage]` line in the terminal.
+
 Not included yet: a model picker (each API backend uses a default model), a
-code editor, a terminal, and saving chats between runs (chats will be saved
-with the SQLite built into Electron, chosen in roadmap Phase 3a). The order they will be built
-in is in [docs/ROADMAP.md](docs/ROADMAP.md).
+code editor, a terminal, and loading saved chats on start. The order they will
+be built in is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 
